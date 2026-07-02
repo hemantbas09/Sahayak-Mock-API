@@ -1,0 +1,6 @@
+{
+  "name": "API Mock Server",
+  "description": "A high-fidelity API mock server for testing endpoints with multiple environments, custom headers, request delay/latency simulation, and a live request logger.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
