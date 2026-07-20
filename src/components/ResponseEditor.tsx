@@ -8,7 +8,9 @@ import {
   HelpCircle,
   Copy,
   FolderOpen,
-  ShieldCheck
+  ShieldCheck,
+  Check,
+  Sparkles
 } from 'lucide-react';
 import { RouteResponse, RouteRule, KeyValue, RuleTarget, RuleOperator } from '../types';
 
@@ -495,22 +497,65 @@ export default function ResponseEditor({
         ) : activeSubTab === 'validation' && (
           <div className="h-full flex flex-col gap-4 min-h-0">
             {/* Header info */}
-            <div className="bg-gray-950 p-4 rounded-xl border border-gray-800 shrink-0">
-              <div className="flex items-center gap-2 text-sm font-semibold text-gray-100">
-                <ShieldCheck size={16} className="text-emerald-400" />
-                <span>Enforce Request Body Contract Validation</span>
+            <div className="bg-gray-950 p-4 rounded-xl border border-gray-800 shrink-0 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3">
+              <div>
+                <div className="flex items-center gap-2 text-sm font-semibold text-gray-100">
+                  <ShieldCheck size={16} className="text-emerald-400" />
+                  <span>Enforce Request Body Contract Validation</span>
+                  {response.validationInterface && response.validationInterface.trim() ? (
+                    <span className="inline-flex items-center gap-1 bg-emerald-500/10 border border-emerald-500/30 text-emerald-400 text-[10px] font-bold px-2 py-0.5 rounded-full uppercase tracking-wider">
+                      <Check size={10} /> Saved & Active
+                    </span>
+                  ) : (
+                    <span className="inline-flex items-center gap-1 bg-amber-500/10 border border-amber-500/30 text-amber-400 text-[10px] font-medium px-2 py-0.5 rounded-full">
+                      No Contract Set
+                    </span>
+                  )}
+                </div>
+                <p className="text-[11px] text-gray-400 mt-1 leading-normal">
+                  Automatically validate incoming HTTP request payloads. Requests not matching the schema are rejected with a <strong>400 Bad Request</strong>.
+                </p>
               </div>
-              <p className="text-[11px] text-gray-400 mt-1 leading-normal">
-                Automatically validate incoming requests. When a contract/interface is defined below, validation is <strong>always enforced</strong>. Requests not matching the schema are rejected with a <strong>400 Bad Request</strong>.
-              </p>
+
+              {/* Quick sample filler */}
+              <button
+                type="button"
+                onClick={() => {
+                  const sampleInterface = `export interface PayloadRequest {
+  cardId: string;
+  amount: string;
+  serviceType: string;
+  mobileNumber: string;
+  codeDeliveryMode: string[];
+  otpMode: string;
+  deviceDetail?: string;
+  channel: string;
+  remarks: string;
+  categoryCode?: string;
+}`;
+                  onChangeResponse({ ...response, validationInterface: sampleInterface });
+                }}
+                className="text-[11px] bg-sky-500/10 hover:bg-sky-500/20 text-sky-400 border border-sky-500/30 px-2.5 py-1.5 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shrink-0 font-medium"
+              >
+                <Sparkles size={12} />
+                <span>Insert Sample Interface</span>
+              </button>
             </div>
 
             {/* Editor */}
             <div className="flex-1 min-h-0 flex flex-col border border-gray-800 rounded-xl overflow-hidden bg-gray-950">
               <div className="bg-gray-900/60 px-4 py-2 border-b border-gray-800 flex justify-between items-center shrink-0">
-                <span className="text-[11px] font-bold text-gray-400 font-mono">PAYLOAD CONTRACT INTERFACE / SCHEMA</span>
+                <span className="text-[11px] font-bold text-gray-400 font-mono flex items-center gap-2">
+                  <span>PAYLOAD CONTRACT INTERFACE / SCHEMA</span>
+                  {response.validationInterface && response.validationInterface.trim() && (
+                    <span className="text-[10px] text-emerald-400 font-sans font-normal">
+                      (Saved to response contract)
+                    </span>
+                  )}
+                </span>
                 {response.validationInterface && (
                   <button
+                    type="button"
                     onClick={() => onChangeResponse({ ...response, validationInterface: '' })}
                     className="text-[10px] text-rose-400 hover:text-rose-300 transition-colors cursor-pointer"
                   >
@@ -521,7 +566,7 @@ export default function ResponseEditor({
               <textarea
                 value={response.validationInterface || ''}
                 onChange={(e) => onChangeResponse({ ...response, validationInterface: e.target.value })}
-                placeholder={`// Paste your TypeScript Interface or JSON Schema here\n\nexport interface UserUpdateRequest {\n  name: string;\n  email: string;\n  phone?: string;\n  age?: number;\n  isActive: boolean;\n}`}
+                placeholder={`// Paste your TypeScript Interface or JSON Schema here\n\nexport interface PayloadRequest {\n  cardId: string;\n  amount: string;\n  serviceType: string;\n  mobileNumber: string;\n  codeDeliveryMode: string[];\n  otpMode: string;\n  deviceDetail?: string;\n  channel: string;\n  remarks: string;\n  categoryCode?: string;\n}`}
                 className="w-full flex-1 p-4 bg-transparent text-gray-200 font-mono text-xs resize-none outline-none leading-relaxed"
                 spellCheck={false}
               />

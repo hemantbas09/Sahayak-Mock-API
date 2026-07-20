@@ -3,56 +3,89 @@ import path from 'path';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
 import admin from 'firebase-admin';
-import { getFirestore } from 'firebase-admin/firestore';
+import { getFirestore as getAdminFirestore } from 'firebase-admin/firestore';
+import { initializeApp as initializeClientApp, getApps, getApp } from 'firebase/app';
+import { getFirestore as getClientFirestore, doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { MockEnvironment, RequestLog, HttpMethod } from './src/types';
 import { parseTemplate } from './src/lib/templates';
 import { slugify } from './src/lib/slugify';
 
 const app = express();
 const PORT = 3000;
-const CONFIG_FILE = path.join(process.cwd(), 'mocks-config.json');
 const FIREBASE_CONFIG_FILE = path.join(process.cwd(), 'firebase-applet-config.json');
+const CONFIG_FILE = path.join(process.cwd(), 'mocks-config.json');
 
-// Initialize Firebase Admin with Fallback
+// Initialize Firebase with Fallback (Admin or Client SDK)
 let db: any = null;
 let useFirebase = false;
+let isClientSdk = false;
 
-const hasGcpCredentials = !!(
-  process.env.K_SERVICE ||
-  process.env.GOOGLE_APPLICATION_CREDENTIALS ||
-  process.env.FIREBASE_SERVICE_ACCOUNT ||
-  process.env.USE_FIREBASE === 'true'
-);
+const serviceAccountEnv = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
 
-if (hasGcpCredentials) {
-  try {
-    if (fs.existsSync(FIREBASE_CONFIG_FILE)) {
-      const configData = JSON.parse(fs.readFileSync(FIREBASE_CONFIG_FILE, 'utf8'));
-      if (configData && configData.projectId) {
-        const firebaseApp = (admin as any).initializeApp({
-          projectId: configData.projectId,
-        });
-        
-        const dbId = configData.firestoreDatabaseId || '(default)';
-        if (dbId && dbId !== '(default)') {
-          db = getFirestore(firebaseApp, dbId);
-        } else {
-          db = getFirestore(firebaseApp);
-        }
-        useFirebase = true;
-        console.log(`[Firebase] Initialized with Project ID: ${configData.projectId}, Database ID: ${dbId}`);
+try {
+  if (serviceAccountEnv) {
+    let serviceAccount;
+    try {
+      if (serviceAccountEnv.trim().startsWith('{')) {
+        serviceAccount = JSON.parse(serviceAccountEnv);
+      } else {
+        const decoded = Buffer.from(serviceAccountEnv, 'base64').toString('utf8');
+        serviceAccount = JSON.parse(decoded);
       }
-    } else {
-      console.log('[Firebase] firebase-applet-config.json not found, using local fallback.');
+    } catch (parseErr) {
+      console.error('[Firebase] Failed to parse FIREBASE_SERVICE_ACCOUNT_JSON env variable.');
+      throw parseErr;
     }
-  } catch (err: any) {
-    const errMsg = err?.message || String(err);
-    console.log(`[Firebase] Initialization note (${errMsg.split('\n')[0]}). Using local fallback.`);
-    useFirebase = false;
-    db = null;
+
+    const firebaseAdminApp = (admin as any).initializeApp({
+      credential: (admin as any).credential.cert(serviceAccount)
+    });
+
+    let dbId = '(default)';
+    if (fs.existsSync(FIREBASE_CONFIG_FILE)) {
+      try {
+        const configData = JSON.parse(fs.readFileSync(FIREBASE_CONFIG_FILE, 'utf8'));
+        dbId = configData.firestoreDatabaseId || '(default)';
+      } catch (e) {}
+    }
+
+    if (dbId && dbId !== '(default)') {
+      db = getAdminFirestore(firebaseAdminApp, dbId);
+    } else {
+      db = getAdminFirestore(firebaseAdminApp);
+    }
+    useFirebase = true;
+    isClientSdk = false;
+    console.log(`[Firebase] Initialized with Service Account on Project ID: ${serviceAccount.project_id}`);
   }
-} else {
-  console.log('[Firebase] Running in non-GCP environment (e.g. Render/Local) without explicit service credentials. Gracefully skipping cloud sync and using local fallback.');
+  else if (fs.existsSync(FIREBASE_CONFIG_FILE)) {
+    const configData = JSON.parse(fs.readFileSync(FIREBASE_CONFIG_FILE, 'utf8'));
+    if (configData && configData.projectId && configData.apiKey) {
+      const clientApp = getApps().length > 0 ? getApp() : initializeClientApp({
+        apiKey: configData.apiKey,
+        projectId: configData.projectId,
+        authDomain: configData.authDomain,
+        storageBucket: configData.storageBucket
+      });
+
+      const dbId = configData.firestoreDatabaseId || '(default)';
+      if (dbId && dbId !== '(default)') {
+        db = getClientFirestore(clientApp, dbId);
+      } else {
+        db = getClientFirestore(clientApp);
+      }
+      useFirebase = true;
+      isClientSdk = true;
+      console.log(`[Firebase] Initialized with Web SDK API Key for Project ID: ${configData.projectId}, Database ID: ${dbId}`);
+    }
+  } else {
+    console.log('[Firebase] Running in local environment without firebase-applet-config.json. Using local file persistence.');
+  }
+} catch (err: any) {
+  const errMsg = err?.message || String(err);
+  console.log(`[Firebase] Initialization note (${errMsg.split('\n')[0]}). Using local file persistence.`);
+  useFirebase = false;
+  db = null;
 }
 
 // Middlewares
@@ -83,15 +116,24 @@ function getNestedValue(obj: any, path: string): any {
   return current;
 }
 
-// Generate default mock data if not existing
+// Generate default mock data or load from local disk
 function loadInitialConfig() {
   try {
     if (fs.existsSync(CONFIG_FILE)) {
-      const data = fs.readFileSync(CONFIG_FILE, 'utf8');
-      environments = JSON.parse(data);
-      console.log(`Loaded ${environments.length} environments from mocks-config.json`);
-    } else {
-      environments = [
+      const fileData = fs.readFileSync(CONFIG_FILE, 'utf8');
+      const parsed = JSON.parse(fileData);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        environments = parsed;
+        console.log(`[Storage] Loaded ${environments.length} mock environments from ${CONFIG_FILE}`);
+        return;
+      }
+    }
+  } catch (err) {
+    console.error('[Storage] Error reading local mocks-config.json, generating defaults:', err);
+  }
+
+  try {
+    environments = [
         {
           id: 'env-auth-user',
           name: 'User & Authentication API',
@@ -312,14 +354,28 @@ function loadInitialConfig() {
           ]
         }
       ];
-      fs.writeFileSync(CONFIG_FILE, JSON.stringify(environments, null, 2), 'utf8');
-      console.log('Created and populated default configuration in mocks-config.json');
-    }
+
+      // Save defaults to file
+      try {
+        fs.writeFileSync(CONFIG_FILE, JSON.stringify(environments, null, 2), 'utf8');
+        console.log(`[Storage] Initialized and saved default configurations to ${CONFIG_FILE}`);
+      } catch (e) {
+        console.error('[Storage] Failed to save default configurations to disk:', e);
+      }
   } catch (err) {
     console.error('Error loading initial configuration:', err);
   }
 }
 loadInitialConfig();
+
+// Helper to save to local disk file
+function saveLocalConfig(envs: MockEnvironment[]) {
+  try {
+    fs.writeFileSync(CONFIG_FILE, JSON.stringify(envs, null, 2), 'utf8');
+  } catch (e: any) {
+    console.error('[Local Storage] Error writing to mocks-config.json:', e?.message || e);
+  }
+}
 
 // Sync with Firestore Cloud Database if configured
 async function syncWithFirestore() {
@@ -328,46 +384,71 @@ async function syncWithFirestore() {
     return;
   }
 
-  const docRef = db.collection('config').doc('mock-environments');
-
   try {
-    const doc = await docRef.get();
-    if (doc.exists) {
-      const data = doc.data();
-      if (data && Array.isArray(data.environments)) {
-        environments = data.environments;
-        console.log(`[Firebase Sync] Initialized mock environments from Firestore. Count: ${environments.length}`);
-      }
-    } else {
-      // Seed firestore document with current environments (from local disk or default fallback)
-      await docRef.set({
-        environments: environments,
-        updatedAt: new Date().toISOString()
-      });
-      console.log(`[Firebase Sync] Seeded mock environments into Firestore. Count: ${environments.length}`);
-    }
-
-    // Register live real-time snapshot listener so multiple team members get instant updates
-    docRef.onSnapshot((snapshot: any) => {
-      if (snapshot && snapshot.exists) {
+    if (isClientSdk) {
+      const docRef = doc(db, 'config', 'mock-environments');
+      const snapshot = await getDoc(docRef);
+      if (snapshot.exists()) {
         const data = snapshot.data();
-        if (data && Array.isArray(data.environments)) {
+        if (data && Array.isArray(data.environments) && data.environments.length > 0) {
           environments = data.environments;
-          console.log(`[Firebase Sync] Cloud synchronized. Live Mock environments updated. Count: ${environments.length}`);
+          saveLocalConfig(environments);
+          console.log(`[Firebase Sync] Initialized mock environments from Firestore (Web SDK). Count: ${environments.length}`);
         }
+      } else {
+        await setDoc(docRef, {
+          environments: environments,
+          updatedAt: new Date().toISOString()
+        });
+        console.log(`[Firebase Sync] Seeded mock environments into Firestore (Web SDK). Count: ${environments.length}`);
       }
-    }, (error: any) => {
-      const errMsg = error?.message || String(error);
-      console.log(`[Firebase Sync] Real-time listener suspended (${errMsg.split('\n')[0]}). Using local fallback storage.`);
-      db = null;
-      useFirebase = false;
-    });
 
+      onSnapshot(docRef, (snap) => {
+        if (snap && snap.exists()) {
+          const data = snap.data();
+          if (data && Array.isArray(data.environments) && data.environments.length > 0) {
+            environments = data.environments;
+            saveLocalConfig(environments);
+            console.log(`[Firebase Sync] Cloud synchronized. Live Mock environments updated. Count: ${environments.length}`);
+          }
+        }
+      }, (error) => {
+        console.log(`[Firebase Sync] Real-time listener note (${error?.message || error}). Using local disk persistence.`);
+      });
+    } else {
+      const docRef = db.collection('config').doc('mock-environments');
+      const snapshot = await docRef.get();
+      if (snapshot.exists) {
+        const data = snapshot.data();
+        if (data && Array.isArray(data.environments) && data.environments.length > 0) {
+          environments = data.environments;
+          saveLocalConfig(environments);
+          console.log(`[Firebase Sync] Initialized mock environments from Firestore (Admin SDK). Count: ${environments.length}`);
+        }
+      } else {
+        await docRef.set({
+          environments: environments,
+          updatedAt: new Date().toISOString()
+        });
+        console.log(`[Firebase Sync] Seeded mock environments into Firestore (Admin SDK). Count: ${environments.length}`);
+      }
+
+      docRef.onSnapshot((snapshot: any) => {
+        if (snapshot && snapshot.exists) {
+          const data = snapshot.data();
+          if (data && Array.isArray(data.environments) && data.environments.length > 0) {
+            environments = data.environments;
+            saveLocalConfig(environments);
+            console.log(`[Firebase Sync] Cloud synchronized. Live Mock environments updated. Count: ${environments.length}`);
+          }
+        }
+      }, (error: any) => {
+        console.log(`[Firebase Sync] Real-time listener note (${error?.message || error}). Using local disk persistence.`);
+      });
+    }
   } catch (err: any) {
     const errMsg = err?.message || String(err);
-    console.log(`[Firebase Sync] Cloud database is not fully authorized or ready (${errMsg.split('\n')[0]}). Falling back to local mocks-config.json storage.`);
-    db = null;
-    useFirebase = false;
+    console.log(`[Firebase Sync] Cloud database operation error (${errMsg.split('\n')[0]}). Falling back to local disk persistence.`);
   }
 }
 syncWithFirestore();
@@ -381,22 +462,28 @@ app.post('/api/environments', async (req, res) => {
   try {
     environments = req.body;
     
-    // Save to local fallback file for fast local startup and robustness
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(environments, null, 2), 'utf8');
+    // 1. Always write to local disk (mocks-config.json)
+    saveLocalConfig(environments);
 
-    // Save to Firestore Cloud Database (wrapped in try-catch to ensure robustness of local operations)
+    // 2. Save to Firestore Cloud Database (if available)
     if (db) {
       try {
-        await db.collection('config').doc('mock-environments').set({
-          environments: environments,
-          updatedAt: new Date().toISOString()
-        });
+        if (isClientSdk) {
+          const docRef = doc(db, 'config', 'mock-environments');
+          await setDoc(docRef, {
+            environments: environments,
+            updatedAt: new Date().toISOString()
+          });
+        } else {
+          await db.collection('config').doc('mock-environments').set({
+            environments: environments,
+            updatedAt: new Date().toISOString()
+          });
+        }
         console.log(`[Firebase Sync] Saved ${environments.length} environments to Firestore Cloud Database.`);
       } catch (dbErr: any) {
         const errMsg = dbErr?.message || String(dbErr);
-        console.log(`[Firebase Sync] Cloud database write suspended (${errMsg.split('\n')[0]}). Using local fallback storage.`);
-        db = null;
-        useFirebase = false;
+        console.log(`[Firebase Sync] Cloud database write note (${errMsg.split('\n')[0]}). Saved to local disk.`);
       }
     }
 
@@ -598,35 +685,128 @@ function evaluateRules(
   }
 }
 
-// Parse and validate request body against pasted TypeScript interface or JSON schema
-function validateBodyAgainstTSInterface(body: any, interfaceStr: string): { valid: boolean; errors: string[] } {
+function getActualType(val: any): string {
+  if (val === null) return 'null';
+  if (val === undefined) return 'undefined';
+  if (Array.isArray(val)) return 'array';
+  return typeof val;
+}
+
+// Parse and validate request body against pasted TypeScript interface, type alias, or JSON schema
+function validateBodyAgainstTSInterface(rawBody: any, interfaceStr: string): { valid: boolean; errors: string[] } {
+  let body = rawBody;
+  if (typeof body === 'string') {
+    try {
+      body = JSON.parse(body);
+    } catch {
+      return { valid: false, errors: ['Request body is not valid JSON'] };
+    }
+  }
+
   if (!body || typeof body !== 'object') {
-    return { valid: false, errors: ['Request body must be a valid JSON object or form data'] };
+    return { valid: false, errors: ['Request body must be a valid JSON object'] };
   }
 
   const errors: string[] = [];
-  const lines = interfaceStr.split('\n');
-  let propertiesFound = 0;
+  const trimmedInterface = (interfaceStr || '').trim();
 
-  for (let line of lines) {
+  if (!trimmedInterface) {
+    return { valid: true, errors: [] };
+  }
+
+  // First try parsing interfaceStr as JSON if it starts with { or [
+  if (trimmedInterface.startsWith('{') || trimmedInterface.startsWith('[')) {
+    try {
+      const parsedObj = JSON.parse(trimmedInterface);
+      if (parsedObj && typeof parsedObj === 'object' && !Array.isArray(parsedObj)) {
+        for (const rawKey of Object.keys(parsedObj)) {
+          const isOptional = rawKey.endsWith('?');
+          const cleanKey = isOptional ? rawKey.slice(0, -1) : rawKey;
+          const expectedVal = parsedObj[rawKey];
+          const actualVal = body[cleanKey];
+
+          if (actualVal === undefined || actualVal === null) {
+            if (!isOptional) {
+              errors.push(`Property "${cleanKey}" is required but is missing or null.`);
+            }
+            continue;
+          }
+
+          if (typeof expectedVal === 'string') {
+            const expType = expectedVal.toLowerCase().trim();
+            if (expType === 'string') {
+              if (typeof actualVal !== 'string') {
+                errors.push(`Property "${cleanKey}" must be a string, but received ${getActualType(actualVal)}.`);
+              } else if (!isOptional && actualVal.trim() === '') {
+                errors.push(`Property "${cleanKey}" is required and cannot be an empty string.`);
+              }
+            } else if (expType === 'number' && typeof actualVal !== 'number' && isNaN(Number(actualVal))) {
+              errors.push(`Property "${cleanKey}" must be a number, but received ${getActualType(actualVal)}.`);
+            } else if (expType === 'boolean' && typeof actualVal !== 'boolean' && actualVal !== 'true' && actualVal !== 'false') {
+              errors.push(`Property "${cleanKey}" must be a boolean, but received ${getActualType(actualVal)}.`);
+            } else if (expType.includes('[]') || expType === 'array') {
+              if (!Array.isArray(actualVal)) {
+                errors.push(`Property "${cleanKey}" must be an array, but received ${getActualType(actualVal)}.`);
+              } else {
+                if (actualVal.some((item) => item === null || item === undefined)) {
+                  errors.push(`Property "${cleanKey}" array cannot contain null or undefined items.`);
+                }
+                if (actualVal.some((item) => typeof item === 'string' && item.trim() === '')) {
+                  errors.push(`Property "${cleanKey}" array cannot contain empty string items.`);
+                }
+                const validItems = actualVal.filter(
+                  (item) => item !== null && item !== undefined && (typeof item !== 'string' || item.trim() !== '')
+                );
+                if (!isOptional && validItems.length === 0) {
+                  errors.push(`Property "${cleanKey}" is required and must contain at least one valid non-empty item.`);
+                }
+              }
+            } else if (expType === 'object' && (typeof actualVal !== 'object' || Array.isArray(actualVal) || actualVal === null)) {
+              errors.push(`Property "${cleanKey}" must be an object, but received ${getActualType(actualVal)}.`);
+            }
+          } else if (Array.isArray(expectedVal)) {
+            if (!Array.isArray(actualVal)) {
+              errors.push(`Property "${cleanKey}" must be an array, but received ${getActualType(actualVal)}.`);
+            }
+          } else if (typeof expectedVal === 'object' && expectedVal !== null) {
+            if (typeof actualVal !== 'object' || Array.isArray(actualVal) || actualVal === null) {
+              errors.push(`Property "${cleanKey}" must be an object, but received ${getActualType(actualVal)}.`);
+            }
+          }
+        }
+        return { valid: errors.length === 0, errors };
+      }
+    } catch {
+      // Not valid JSON, fall through to TS Interface parser
+    }
+  }
+
+  // TypeScript / Type Alias interface parser
+  const lines = trimmedInterface.split(/\r?\n/);
+
+  for (let rawLine of lines) {
     // Strip comments
-    line = line.split('//')[0].split('/*')[0].trim();
+    let line = rawLine.split('//')[0].split('/*')[0].trim();
     if (!line) continue;
 
-    // Remove trailing commas/semicolons and braces
-    line = line.replace(/[;,]$/, '').trim();
+    // Ignore header/footer declarations like "export interface Payload {", "type Payload = {", "}", "{"
+    if (line.match(/^(export\s+)?(interface|type)\s+[a-zA-Z0-9_$-]+/i) || line === '{' || line === '}') {
+      continue;
+    }
 
-    // Regex to match property: key?: type or key: type or "key"?: type or "key": type
+    // Clean trailing semicolons, commas, or closing braces
+    line = line.replace(/[;,{}]+$/g, '').trim();
+
+    // Match property definition e.g. "cardId: string", "deviceDetail?: string", "codeDeliveryMode: string[]"
     const match = line.match(/^"?([a-zA-Z0-9_$-]+)"?(\??)\s*:\s*(.+)$/);
     if (!match) continue;
 
-    propertiesFound++;
     const key = match[1];
     const isOptional = match[2] === '?';
-    let typeName = match[3].trim().toLowerCase();
+    let typeDef = match[3].trim();
 
-    // Remove any curly brackets that might be at the end of the line
-    typeName = typeName.replace(/[}{]/g, '').trim();
+    // Clean inner or trailing braces/semicolons from typeDef e.g. "string; }" -> "string"
+    typeDef = typeDef.replace(/[;,{}]+$/g, '').trim();
 
     const value = body[key];
 
@@ -637,74 +817,98 @@ function validateBodyAgainstTSInterface(body: any, interfaceStr: string): { vali
       continue;
     }
 
-    // Type validation
-    if (typeName.startsWith('string')) {
-      if (typeof value !== 'string') {
-        errors.push(`Property "${key}" must be a string, but received ${typeof value}.`);
-      }
-    } else if (typeName.startsWith('number')) {
-      const isNum = typeof value === 'number' && !isNaN(value);
-      const isNumericString = typeof value === 'string' && value.trim() !== '' && !isNaN(Number(value));
-      if (!isNum && !isNumericString) {
-        errors.push(`Property "${key}" must be a number, but received ${typeof value}.`);
-      }
-    } else if (typeName.startsWith('boolean')) {
-      const isBool = typeof value === 'boolean' || value === 'true' || value === 'false';
-      if (!isBool) {
-        errors.push(`Property "${key}" must be a boolean, but received ${typeof value}.`);
-      }
-    } else if (typeName.includes('[]') || typeName.startsWith('array')) {
+    const lowerTypeDef = typeDef.toLowerCase();
+
+    // 1. ARRAY CHECK (Must be evaluated BEFORE primitive startsWith checks like 'string')
+    if (
+      typeDef.includes('[]') ||
+      lowerTypeDef.startsWith('array') ||
+      lowerTypeDef.startsWith('readonly ') ||
+      typeDef.startsWith('[')
+    ) {
       if (!Array.isArray(value)) {
-        errors.push(`Property "${key}" must be an array, but received ${typeof value}.`);
-      }
-    } else if (typeName === 'object') {
-      if (typeof value !== 'object' || Array.isArray(value) || value === null) {
-        errors.push(`Property "${key}" must be an object, but received ${typeof value}.`);
-      }
-    }
-  }
+        errors.push(`Property "${key}" must be an array (${typeDef}), but received ${getActualType(value)}.`);
+      } else {
+        if (value.some((item) => item === null || item === undefined)) {
+          errors.push(`Property "${key}" array cannot contain null or undefined items.`);
+        }
+        if (value.some((item) => typeof item === 'string' && item.trim() === '')) {
+          errors.push(`Property "${key}" array cannot contain empty string items.`);
+        }
 
-  // If no TS fields found, check if it's a JSON template
-  if (propertiesFound === 0) {
-    try {
-      const parsedObj = JSON.parse(interfaceStr);
-      if (parsedObj && typeof parsedObj === 'object') {
-        for (const key of Object.keys(parsedObj)) {
-          const expectedVal = parsedObj[key];
-          const actualVal = body[key];
+        const validItems = value.filter(
+          (item) => item !== null && item !== undefined && (typeof item !== 'string' || item.trim() !== '')
+        );
 
-          const isOptional = key.endsWith('?');
-          const cleanKey = isOptional ? key.slice(0, -1) : key;
-          const valueToValidate = isOptional ? body[cleanKey] : actualVal;
+        if (!isOptional && validItems.length === 0) {
+          errors.push(`Property "${key}" is required and must contain at least one valid non-empty item in the array.`);
+        }
 
-          if (valueToValidate === undefined || valueToValidate === null) {
-            if (!isOptional) {
-              errors.push(`Property "${cleanKey}" is required, but is missing or null.`);
-            }
-            continue;
+        // Element type checks if specified e.g. string[], number[]
+        if (lowerTypeDef.startsWith('string[]') || lowerTypeDef.startsWith('array<string>')) {
+          if (value.some((item) => item !== null && item !== undefined && typeof item !== 'string')) {
+            errors.push(`Property "${key}" array items must all be strings.`);
           }
-
-          const expectedType = typeof expectedVal;
-          const actualType = typeof valueToValidate;
-          if ((expectedType as string) !== 'any' && expectedType !== actualType) {
-            if (expectedType === 'number' && actualType === 'string' && !isNaN(Number(valueToValidate))) {
-              continue;
-            }
-            if (expectedType === 'boolean' && actualType === 'string' && (valueToValidate === 'true' || valueToValidate === 'false')) {
-              continue;
-            }
-            errors.push(`Property "${cleanKey}" should be of type ${expectedType}, but received ${actualType}.`);
+        } else if (lowerTypeDef.startsWith('number[]') || lowerTypeDef.startsWith('array<number>')) {
+          if (value.some((item) => item !== null && item !== undefined && typeof item !== 'number' && isNaN(Number(item)))) {
+            errors.push(`Property "${key}" array items must all be numbers.`);
           }
         }
       }
-    } catch {
-      // Not a valid JSON either, skipping schema check
+    }
+    // 2. STRING CHECK
+    else if (lowerTypeDef === 'string' || lowerTypeDef.startsWith('string') || typeDef === '"string"') {
+      if (typeof value !== 'string') {
+        errors.push(`Property "${key}" must be a string, but received ${getActualType(value)}.`);
+      } else if (!isOptional && value.trim() === '') {
+        errors.push(`Property "${key}" is required and cannot be an empty string.`);
+      }
+    }
+    // 3. NUMBER CHECK
+    else if (lowerTypeDef === 'number' || lowerTypeDef.startsWith('number') || typeDef === '"number"') {
+      const isNum = typeof value === 'number' && !isNaN(value);
+      const isNumStr = typeof value === 'string' && value.trim() !== '' && !isNaN(Number(value));
+      if (!isNum && !isNumStr) {
+        errors.push(`Property "${key}" must be a number, but received ${getActualType(value)}.`);
+      }
+    }
+    // 4. BOOLEAN CHECK
+    else if (lowerTypeDef === 'boolean' || lowerTypeDef.startsWith('boolean') || typeDef === '"boolean"') {
+      const isBool = typeof value === 'boolean' || value === 'true' || value === 'false';
+      if (!isBool) {
+        errors.push(`Property "${key}" must be a boolean, but received ${getActualType(value)}.`);
+      }
+    }
+    // 5. OBJECT CHECK
+    else if (lowerTypeDef === 'object' || lowerTypeDef.startsWith('record<') || typeDef.startsWith('{')) {
+      if (typeof value !== 'object' || Array.isArray(value) || value === null) {
+        errors.push(`Property "${key}" must be an object, but received ${getActualType(value)}.`);
+      }
+    }
+    // 6. UNION / LITERAL CHECK e.g. 'SMS' | 'EMAIL' or string | number
+    else if (typeDef.includes('|')) {
+      const unionParts = typeDef.split('|').map((p) => p.trim().replace(/^['"]|['"]$/g, ''));
+      const matchesLiteral = unionParts.includes(String(value));
+      const matchesType = unionParts.some((part) => {
+        const pLower = part.toLowerCase();
+        if (pLower === 'string') return typeof value === 'string';
+        if (pLower === 'number') return typeof value === 'number' || !isNaN(Number(value));
+        if (pLower === 'boolean') return typeof value === 'boolean' || value === 'true' || value === 'false';
+        return false;
+      });
+      if (!matchesLiteral && !matchesType) {
+        errors.push(`Property "${key}" must match union type (${typeDef}), but received ${JSON.stringify(value)}.`);
+      }
+    }
+    // 7. ANY / UNKNOWN
+    else if (lowerTypeDef === 'any' || lowerTypeDef === 'unknown') {
+      // Valid for any value
     }
   }
 
   return {
     valid: errors.length === 0,
-    errors
+    errors,
   };
 }
 
@@ -893,10 +1097,15 @@ app.all('/mock/:envId/*', async (req, res) => {
   }
 
   // Perform schema validation if a validation interface is defined and it is not a GET request.
-  const isValidationRequired = req.method !== 'GET' && matchedResponse && matchedResponse.validationInterface && matchedResponse.validationInterface.trim() !== '';
+  const validationSchema = (matchedResponse && matchedResponse.validationInterface && matchedResponse.validationInterface.trim() !== '')
+    ? matchedResponse.validationInterface
+    : (matchedRoute.responses.find((r) => r.id === matchedRoute.selectedResponseId)?.validationInterface ||
+       matchedRoute.responses.find((r) => r.validationInterface && r.validationInterface.trim() !== '')?.validationInterface);
 
-  if (isValidationRequired && matchedResponse && matchedResponse.validationInterface) {
-    const validation = validateBodyAgainstTSInterface(req.body, matchedResponse.validationInterface);
+  const isValidationRequired = req.method !== 'GET' && !!validationSchema && validationSchema.trim() !== '';
+
+  if (isValidationRequired && validationSchema) {
+    const validation = validateBodyAgainstTSInterface(req.body, validationSchema);
     if (!validation.valid) {
       const logId = 'log-' + Math.random().toString(36).substr(2, 9);
       const logItem: RequestLog = {
@@ -913,10 +1122,10 @@ app.all('/mock/:envId/*', async (req, res) => {
         responseHeaders: { 'Content-Type': 'application/json' },
         responseBody: JSON.stringify({
           success: false,
-          message: "Payload is not matched: some required fields are missing or invalid.",
+          message: "Payload validation failed: request body does not match the required interface/schema contract.",
           errors: validation.errors
         }, null, 2),
-        matchedRoute: `${matchedRoute.method.toUpperCase()} ${matchedRoute.endpoint}`,
+        matchedRoute: `${matchedRoute.method.toUpperCase()} /${matchedRoute.endpoint}`,
         latency: 0,
       };
       requestLogs.unshift(logItem);
@@ -924,7 +1133,7 @@ app.all('/mock/:envId/*', async (req, res) => {
 
       return res.status(400).json({
         success: false,
-        message: "Payload is not matched: some required fields are missing or invalid.",
+        message: "Payload validation failed: request body does not match the required interface/schema contract.",
         errors: validation.errors
       });
     }

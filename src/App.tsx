@@ -108,18 +108,61 @@ export default function App() {
       const res = await fetch('/api/environments');
       if (res.ok) {
         const data = await res.json();
-        setEnvironments(data);
+        
+        let activeData = data;
+        const localBackup = localStorage.getItem('api_mock_environments_user_saved');
+        if (localBackup) {
+          try {
+            const parsedBackup = JSON.parse(localBackup);
+            if (Array.isArray(parsedBackup.environments) && parsedBackup.environments.length > 0) {
+              const userEnvs = parsedBackup.environments;
+              const userJson = JSON.stringify(userEnvs);
+              const serverJson = JSON.stringify(data);
+
+              // If server data differs from user backup (e.g. server restarted and reset to initial defaults)
+              if (serverJson !== userJson) {
+                const isServerDefault = !Array.isArray(data) || data.length === 0 || (
+                  data.length === 2 && data[0]?.id === 'env-auth-user' && data[1]?.id === 'env-ecommerce'
+                );
+
+                if (isServerDefault || parsedBackup.hasUserSaved) {
+                  console.log('[Rehydration] Server restarted or reset. Rehydrating server with user saved configurations.');
+                  activeData = userEnvs;
+                  // Rehydrate server asynchronously
+                  fetch('/api/environments', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify(userEnvs)
+                  }).catch(() => {});
+                }
+              }
+            }
+          } catch (e) {
+            console.error('[Rehydration] Local backup parse error:', e);
+          }
+        }
+
+        setEnvironments(activeData);
         
         const activeId = currentSelectedId !== undefined ? currentSelectedId : selectedEnvId;
-        if (data.length > 0 && !activeId) {
-          setSelectedEnvId(data[0].id);
-          if (data[0].routes.length > 0) {
-            setSelectedRouteId(data[0].routes[0].id);
+        if (activeData.length > 0 && !activeId) {
+          setSelectedEnvId(activeData[0].id);
+          if (activeData[0].routes.length > 0) {
+            setSelectedRouteId(activeData[0].routes[0].id);
           }
         }
       }
     } catch (err) {
-      console.error('Failed to load environments:', err);
+      console.error('Failed to load environments from server, checking local backup:', err);
+      const localBackup = localStorage.getItem('api_mock_environments_user_saved');
+      if (localBackup) {
+        try {
+          const parsed = JSON.parse(localBackup);
+          if (Array.isArray(parsed.environments) && parsed.environments.length > 0) {
+            setEnvironments(parsed.environments);
+          }
+        } catch (e) {}
+      }
     } finally {
       setIsLoading(false);
     }
@@ -137,25 +180,66 @@ export default function App() {
     }
   };
 
+// Helper to safely write to localStorage without throwing QuotaExceededError
+const safeSetLocalStorage = (key: string, data: any) => {
+  try {
+    localStorage.setItem(key, JSON.stringify(data));
+  } catch (err) {
+    console.warn('[LocalStorage] Quota exceeded or storage blocked. Attempting trimmed backup:', err);
+    try {
+      if (data && Array.isArray(data.environments)) {
+        const trimmedEnvs = data.environments.map((env: any) => ({
+          ...env,
+          routes: Array.isArray(env.routes) ? env.routes.map((r: any) => ({
+            ...r,
+            rules: Array.isArray(r.rules) ? r.rules.map((rule: any) => ({
+              ...rule,
+              body: typeof rule.body === 'string' && rule.body.length > 2000
+                ? rule.body.substring(0, 500) + '... (truncated for local storage cache)'
+                : rule.body
+            })) : []
+          })) : []
+        }));
+        localStorage.setItem(key, JSON.stringify({ ...data, environments: trimmedEnvs }));
+      }
+    } catch (fallbackErr) {
+      console.warn('[LocalStorage] Could not save fallback local backup:', fallbackErr);
+    }
+  }
+};
+
   // Update local Environments state and mark as unsaved
   const saveEnvironments = (updatedEnvs: MockEnvironment[]) => {
     setEnvironments(updatedEnvs);
     setHasChanges(true);
+    safeSetLocalStorage('api_mock_environments_user_saved', {
+      environments: updatedEnvs,
+      savedAt: Date.now(),
+      hasUserSaved: true
+    });
   };
 
   // Synchronize local Environments with backend server disk
   const handleSaveChanges = async () => {
     setIsSaving(true);
     try {
+      safeSetLocalStorage('api_mock_environments_user_saved', {
+        environments: environments,
+        savedAt: Date.now(),
+        hasUserSaved: true
+      });
+
       const res = await fetch('/api/environments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(environments)
       });
+
       if (res.ok) {
         setHasChanges(false);
       } else {
-        console.error('Failed to save environments to server:', res.statusText);
+        const errorText = await res.text().catch(() => res.statusText);
+        console.error('Failed to save environments to server:', errorText);
       }
     } catch (err) {
       console.error('Failed to save environments to server:', err);
