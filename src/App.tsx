@@ -61,6 +61,7 @@ export default function App() {
   // Server state fetching status
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
+  const AUTO_REFRESH_INTERVAL_MS = 2 * 60 * 60 * 1000;
 
   // On Mount: Load configurations and logs from server once
   useEffect(() => {
@@ -68,7 +69,7 @@ export default function App() {
     fetchLogs();
   }, []);
 
-  // Auto-poll logs and environments every 4 seconds to keep the small team perfectly in sync!
+  // Auto-poll logs and environments every 2 hours to avoid excessive background traffic.
   useEffect(() => {
     const interval = setInterval(() => {
       // Prevent fetching environments when the user is actively typing/focusing an input,
@@ -85,62 +86,38 @@ export default function App() {
         fetchEnvironments(selectedEnvId);
       }
       fetchLogs();
-    }, 4000);
+    }, AUTO_REFRESH_INTERVAL_MS);
 
     return () => clearInterval(interval);
   }, [selectedEnvId, hasChanges]);
 
-  // Warn user if they try to leave or reload the page with unsaved changes
-  useEffect(() => {
-    const handleBeforeUnload = (e: BeforeUnloadEvent) => {
-      if (hasChanges) {
-        e.preventDefault();
-        e.returnValue = 'You have unsaved changes. Are you sure you want to leave?';
-        return e.returnValue;
+  const flushToFirebase = async (updatedEnvs: MockEnvironment[]) => {
+    setIsSaving(true);
+    try {
+      const res = await fetch('/api/environments', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updatedEnvs)
+      });
+
+      if (!res.ok) {
+        const errorText = await res.text().catch(() => res.statusText);
+        console.error('Failed to save environments to server:', errorText);
+        return;
       }
-    };
-    window.addEventListener('beforeunload', handleBeforeUnload);
-    return () => window.removeEventListener('beforeunload', handleBeforeUnload);
-  }, [hasChanges]);
+    } catch (err) {
+      console.error('Failed to save environments to server:', err);
+    } finally {
+      setIsSaving(false);
+    }
+  };
 
   const fetchEnvironments = async (currentSelectedId?: string | null) => {
     try {
       const res = await fetch('/api/environments');
       if (res.ok) {
         const data = await res.json();
-        
-        let activeData = data;
-        const localBackup = localStorage.getItem('api_mock_environments_user_saved');
-        if (localBackup) {
-          try {
-            const parsedBackup = JSON.parse(localBackup);
-            if (Array.isArray(parsedBackup.environments) && parsedBackup.environments.length > 0) {
-              const userEnvs = parsedBackup.environments;
-              const userJson = JSON.stringify(userEnvs);
-              const serverJson = JSON.stringify(data);
-
-              // If server data differs from user backup (e.g. server restarted and reset to initial defaults)
-              if (serverJson !== userJson) {
-                const isServerDefault = !Array.isArray(data) || data.length === 0 || (
-                  data.length === 2 && data[0]?.id === 'env-auth-user' && data[1]?.id === 'env-ecommerce'
-                );
-
-                if (isServerDefault || parsedBackup.hasUserSaved) {
-                  console.log('[Rehydration] Server restarted or reset. Rehydrating server with user saved configurations.');
-                  activeData = userEnvs;
-                  // Rehydrate server asynchronously
-                  fetch('/api/environments', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify(userEnvs)
-                  }).catch(() => {});
-                }
-              }
-            }
-          } catch (e) {
-            console.error('[Rehydration] Local backup parse error:', e);
-          }
-        }
+        const activeData = Array.isArray(data) ? data : [];
 
         setEnvironments(activeData);
         
@@ -153,16 +130,7 @@ export default function App() {
         }
       }
     } catch (err) {
-      console.error('Failed to load environments from server, checking local backup:', err);
-      const localBackup = localStorage.getItem('api_mock_environments_user_saved');
-      if (localBackup) {
-        try {
-          const parsed = JSON.parse(localBackup);
-          if (Array.isArray(parsed.environments) && parsed.environments.length > 0) {
-            setEnvironments(parsed.environments);
-          }
-        } catch (e) {}
-      }
+      console.error('Failed to load environments from server:', err);
     } finally {
       setIsLoading(false);
     }
@@ -180,71 +148,20 @@ export default function App() {
     }
   };
 
-// Helper to safely write to localStorage without throwing QuotaExceededError
-const safeSetLocalStorage = (key: string, data: any) => {
-  try {
-    localStorage.setItem(key, JSON.stringify(data));
-  } catch (err) {
-    console.warn('[LocalStorage] Quota exceeded or storage blocked. Attempting trimmed backup:', err);
-    try {
-      if (data && Array.isArray(data.environments)) {
-        const trimmedEnvs = data.environments.map((env: any) => ({
-          ...env,
-          routes: Array.isArray(env.routes) ? env.routes.map((r: any) => ({
-            ...r,
-            rules: Array.isArray(r.rules) ? r.rules.map((rule: any) => ({
-              ...rule,
-              body: typeof rule.body === 'string' && rule.body.length > 2000
-                ? rule.body.substring(0, 500) + '... (truncated for local storage cache)'
-                : rule.body
-            })) : []
-          })) : []
-        }));
-        localStorage.setItem(key, JSON.stringify({ ...data, environments: trimmedEnvs }));
-      }
-    } catch (fallbackErr) {
-      console.warn('[LocalStorage] Could not save fallback local backup:', fallbackErr);
-    }
-  }
-};
-
   // Update local Environments state and mark as unsaved
   const saveEnvironments = (updatedEnvs: MockEnvironment[]) => {
     setEnvironments(updatedEnvs);
     setHasChanges(true);
-    safeSetLocalStorage('api_mock_environments_user_saved', {
-      environments: updatedEnvs,
-      savedAt: Date.now(),
-      hasUserSaved: true
-    });
   };
 
-  // Synchronize local Environments with backend server disk
+  // Save current state to Firebase only when the user clicks Save.
   const handleSaveChanges = async () => {
-    setIsSaving(true);
     try {
-      safeSetLocalStorage('api_mock_environments_user_saved', {
-        environments: environments,
-        savedAt: Date.now(),
-        hasUserSaved: true
-      });
-
-      const res = await fetch('/api/environments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(environments)
-      });
-
-      if (res.ok) {
-        setHasChanges(false);
-      } else {
-        const errorText = await res.text().catch(() => res.statusText);
-        console.error('Failed to save environments to server:', errorText);
-      }
+      await flushToFirebase(environments);
+      await fetchEnvironments(selectedEnvId);
+      setHasChanges(false);
     } catch (err) {
-      console.error('Failed to save environments to server:', err);
-    } finally {
-      setIsSaving(false);
+      console.error('Failed to save environments:', err);
     }
   };
 
@@ -319,22 +236,15 @@ const safeSetLocalStorage = (key: string, data: any) => {
       title: 'Delete Environment',
       message: `Are you sure you want to delete "${envName}"? This will permanently delete all associated routes, rules, and mock responses.`,
       onConfirm: () => {
-        setEnvironments(prevEnvs => {
-          const updated = prevEnvs.filter(e => e.id !== id);
-          
-          setTimeout(() => {
-            if (updated.length > 0) {
-              setSelectedEnvId(updated[0].id);
-              setSelectedRouteId(updated[0].routes[0]?.id || null);
-            } else {
-              setSelectedEnvId(null);
-              setSelectedRouteId(null);
-            }
-          }, 0);
-          
-          return updated;
-        });
-        setHasChanges(true);
+        const updated = environments.filter(e => e.id !== id);
+        saveEnvironments(updated);
+        if (updated.length > 0) {
+          setSelectedEnvId(updated[0].id);
+          setSelectedRouteId(updated[0].routes[0]?.id || null);
+        } else {
+          setSelectedEnvId(null);
+          setSelectedRouteId(null);
+        }
         setConfirmModal(null);
       }
     });
@@ -394,27 +304,21 @@ const safeSetLocalStorage = (key: string, data: any) => {
 
   const handleDeleteRoute = (id: string) => {
     if (!selectedEnvId) return;
-    
-    setEnvironments(prevEnvs => {
-      const updated = prevEnvs.map(e => {
-        if (e.id === selectedEnvId) {
-          const routes = e.routes.filter(r => r.id !== id);
-          return { ...e, routes };
-        }
-        return e;
-      });
 
-      // Auto-select another route if we deleted the currently selected one
-      if (selectedRouteId === id) {
-        const env = updated.find(e => e.id === selectedEnvId);
-        setTimeout(() => {
-          setSelectedRouteId(env?.routes[0]?.id || null);
-        }, 0);
+    const updated = environments.map(e => {
+      if (e.id === selectedEnvId) {
+        const routes = e.routes.filter(r => r.id !== id);
+        return { ...e, routes };
       }
-
-      return updated;
+      return e;
     });
-    setHasChanges(true);
+
+    saveEnvironments(updated);
+
+    if (selectedRouteId === id) {
+      const env = updated.find(e => e.id === selectedEnvId);
+      setSelectedRouteId(env?.routes[0]?.id || null);
+    }
   };
 
   const handleDuplicateRoute = (route: MockRoute) => {

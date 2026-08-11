@@ -63,8 +63,9 @@ Since this app uses a full-stack **Express backend** (to handle routing, wildcar
    *   **Runtime**: `Node`
    *   **Build Command**: `npm install && npm run build`
    *   **Start Command**: `npm start`
-4. Set the environment variable `PORT=3000` (Render will bind correctly, or automatically handle ingress).
-5. Deploy! Your app will go live with an `onrender.com` URL.
+4. Set the environment variable `FIREBASE_SERVICE_ACCOUNT_JSON` to your Firebase service account JSON, either as raw JSON or base64-encoded JSON.
+5. If you created a named Firestore database, set `FIRESTORE_DATABASE_ID` too. If not, leave it blank and the app will use the default database.
+6. Deploy! Your app will go live with an `onrender.com` URL and persist mock data only in Firestore.
 
 ### Option B: Railway (Fastest Setup)
 [Railway](https://railway.app/) offers quick, zero-config deployments.

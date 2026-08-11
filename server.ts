@@ -2,28 +2,37 @@ import express from 'express';
 import path from 'path';
 import fs from 'fs';
 import { createServer as createViteServer } from 'vite';
-import admin from 'firebase-admin';
+import { cert, getApp, getApps, initializeApp } from 'firebase-admin/app';
 import { getFirestore as getAdminFirestore } from 'firebase-admin/firestore';
-import { initializeApp as initializeClientApp, getApps, getApp } from 'firebase/app';
-import { getFirestore as getClientFirestore, doc, getDoc, setDoc, onSnapshot } from 'firebase/firestore';
 import { MockEnvironment, RequestLog, HttpMethod } from './src/types';
 import { parseTemplate } from './src/lib/templates';
 import { slugify } from './src/lib/slugify';
 
 const app = express();
 const PORT = 3000;
-const FIREBASE_CONFIG_FILE = path.join(process.cwd(), 'firebase-applet-config.json');
-const CONFIG_FILE = path.join(process.cwd(), 'mocks-config.json');
 
-// Initialize Firebase with Fallback (Admin or Client SDK)
+function resolveFirestoreDatabaseId(): string | null {
+  const envDbId = process.env.FIRESTORE_DATABASE_ID?.trim();
+  if (envDbId) {
+    return envDbId;
+  }
+  return null;
+}
+
+function getErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}
+
+// Initialize Firebase with the Admin SDK only.
 let db: any = null;
-let useFirebase = false;
-let isClientSdk = false;
+let dbIdInUse: string | null = null;
 
 const serviceAccountEnv = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
 
 try {
-  if (serviceAccountEnv) {
+  if (!serviceAccountEnv) {
+    console.warn('[Firebase] FIREBASE_SERVICE_ACCOUNT_JSON is not set. The app will run, but Firestore save/load is disabled until you configure it.');
+  } else {
     let serviceAccount;
     try {
       if (serviceAccountEnv.trim().startsWith('{')) {
@@ -37,54 +46,25 @@ try {
       throw parseErr;
     }
 
-    const firebaseAdminApp = (admin as any).initializeApp({
-      credential: (admin as any).credential.cert(serviceAccount)
-    });
+    const firebaseAdminApp = getApps().length > 0
+      ? getApp()
+      : initializeApp({
+          credential: cert(serviceAccount)
+        });
 
-    let dbId = '(default)';
-    if (fs.existsSync(FIREBASE_CONFIG_FILE)) {
-      try {
-        const configData = JSON.parse(fs.readFileSync(FIREBASE_CONFIG_FILE, 'utf8'));
-        dbId = configData.firestoreDatabaseId || '(default)';
-      } catch (e) {}
-    }
+    const dbId = resolveFirestoreDatabaseId();
 
-    if (dbId && dbId !== '(default)') {
+    if (dbId) {
       db = getAdminFirestore(firebaseAdminApp, dbId);
     } else {
       db = getAdminFirestore(firebaseAdminApp);
     }
-    useFirebase = true;
-    isClientSdk = false;
-    console.log(`[Firebase] Initialized with Service Account on Project ID: ${serviceAccount.project_id}`);
-  }
-  else if (fs.existsSync(FIREBASE_CONFIG_FILE)) {
-    const configData = JSON.parse(fs.readFileSync(FIREBASE_CONFIG_FILE, 'utf8'));
-    if (configData && configData.projectId && configData.apiKey) {
-      const clientApp = getApps().length > 0 ? getApp() : initializeClientApp({
-        apiKey: configData.apiKey,
-        projectId: configData.projectId,
-        authDomain: configData.authDomain,
-        storageBucket: configData.storageBucket
-      });
-
-      const dbId = configData.firestoreDatabaseId || '(default)';
-      if (dbId && dbId !== '(default)') {
-        db = getClientFirestore(clientApp, dbId);
-      } else {
-        db = getClientFirestore(clientApp);
-      }
-      useFirebase = true;
-      isClientSdk = true;
-      console.log(`[Firebase] Initialized with Web SDK API Key for Project ID: ${configData.projectId}, Database ID: ${dbId}`);
-    }
-  } else {
-    console.log('[Firebase] Running in local environment without firebase-applet-config.json. Using local file persistence.');
+    dbIdInUse = dbId;
+    console.log(`[Firebase] Initialized with Service Account on Project ID: ${serviceAccount.project_id}; Firestore database: ${dbId || '(default)'}`);
   }
 } catch (err: any) {
   const errMsg = err?.message || String(err);
-  console.log(`[Firebase] Initialization note (${errMsg.split('\n')[0]}). Using local file persistence.`);
-  useFirebase = false;
+  console.warn(`[Firebase] Initialization warning (${errMsg.split('\n')[0]}). The app will continue without Firestore persistence.`);
   db = null;
 }
 
@@ -116,342 +96,55 @@ function getNestedValue(obj: any, path: string): any {
   return current;
 }
 
-// Generate default mock data or load from local disk
+// Start with an empty configuration unless Firestore already has saved data.
 function loadInitialConfig() {
   try {
-    if (fs.existsSync(CONFIG_FILE)) {
-      const fileData = fs.readFileSync(CONFIG_FILE, 'utf8');
-      const parsed = JSON.parse(fileData);
-      if (Array.isArray(parsed) && parsed.length > 0) {
-        environments = parsed;
-        console.log(`[Storage] Loaded ${environments.length} mock environments from ${CONFIG_FILE}`);
-        return;
-      }
-    }
-  } catch (err) {
-    console.error('[Storage] Error reading local mocks-config.json, generating defaults:', err);
-  }
-
-  try {
-    environments = [
-        {
-          id: 'env-auth-user',
-          name: 'User & Authentication API',
-          endpointPrefix: 'api/v1',
-          port: 3000,
-          latency: 150,
-          headers: [
-            { id: 'h1', key: 'Content-Type', value: 'application/json' },
-            { id: 'h2', key: 'Access-Control-Allow-Origin', value: '*' },
-            { id: 'h3', key: 'X-Powered-By', value: 'Mockoon-Clone' }
-          ],
-          routes: [
-            {
-              id: 'route-login',
-              method: 'post',
-              endpoint: 'auth/login',
-              description: 'Examines credentials and issues a mock token',
-              latency: 300,
-              selectedResponseId: 'resp-login-success',
-              responses: [
-                {
-                  id: 'resp-login-error',
-                  statusCode: 401,
-                  label: 'Unauthorized (Wrong Password)',
-                  headers: [],
-                  rulesOperator: 'AND',
-                  rules: [
-                    {
-                      id: 'rule-wrong-pass',
-                      target: 'body',
-                      property: 'password',
-                      operator: 'not_equals',
-                      value: 'secret'
-                    }
-                  ],
-                  body: JSON.stringify({
-                    error: "Unauthorized",
-                    message: "Invalid username or password. Tip: Use password 'secret' to login successfully!"
-                  }, null, 2)
-                },
-                {
-                  id: 'resp-login-success',
-                  statusCode: 200,
-                  label: 'Success (Token Issued)',
-                  headers: [
-                    { id: 'lh1', key: 'Set-Cookie', value: 'session_token={{uuid}}; HttpOnly; Max-Age=3600' }
-                  ],
-                  rulesOperator: 'AND',
-                  rules: [],
-                  body: JSON.stringify({
-                    token: "{{uuid}}",
-                    expiresIn: 3600,
-                    user: {
-                      id: "{{uuid}}",
-                      username: "{{body 'username' 'guest'}}",
-                      email: "{{body 'username' 'guest'}}@example.com",
-                      role: "developer",
-                      createdAt: "{{date 'iso'}}"
-                    }
-                  }, null, 2)
-                }
-              ]
-            },
-            {
-              id: 'route-user-detail',
-              method: 'get',
-              endpoint: 'users/:id',
-              description: 'Get user details by ID',
-              latency: 0,
-              selectedResponseId: 'resp-user-fallback',
-              responses: [
-                {
-                  id: 'resp-user-admin',
-                  statusCode: 200,
-                  label: 'Admin User Profile',
-                  headers: [],
-                  rulesOperator: 'AND',
-                  rules: [
-                    {
-                      id: 'rule-is-admin',
-                      target: 'route_param',
-                      property: 'id',
-                      operator: 'equals',
-                      value: 'admin'
-                    }
-                  ],
-                  body: JSON.stringify({
-                    id: "admin",
-                    username: "root_administrator",
-                    email: "admin@api-mock.local",
-                    role: "system-admin",
-                    permissions: ["read", "write", "delete", "mock"],
-                    systemDetails: {
-                      serverTime: "{{date 'utc'}}",
-                      deployment: "cloud-run"
-                    }
-                  }, null, 2)
-                },
-                {
-                  id: 'resp-user-fallback',
-                  statusCode: 200,
-                  label: 'Standard User (Dynamic)',
-                  headers: [],
-                  rulesOperator: 'AND',
-                  rules: [],
-                  body: JSON.stringify({
-                    id: "{{routeParam 'id'}}",
-                    username: "user_{{routeParam 'id'}}",
-                    email: "user_{{routeParam 'id'}}@example.com",
-                    status: "active",
-                    luckyNumber: "{{randomInt 1 100}}",
-                    registeredAt: "{{date 'iso'}}"
-                  }, null, 2)
-                }
-              ]
-            },
-            {
-              id: 'route-users-list',
-              method: 'get',
-              endpoint: 'users',
-              description: 'List all registered users',
-              latency: 100,
-              selectedResponseId: 'resp-users-all',
-              responses: [
-                {
-                  id: 'resp-users-filtered',
-                  statusCode: 200,
-                  label: 'Filtered list by role',
-                  headers: [],
-                  rulesOperator: 'AND',
-                  rules: [
-                    {
-                      id: 'rule-role-query',
-                      target: 'query',
-                      property: 'role',
-                      operator: 'equals',
-                      value: 'admin'
-                    }
-                  ],
-                  body: JSON.stringify([
-                    { id: '1', username: 'admin_mary', role: 'admin', email: 'mary@example.com' },
-                    { id: '2', username: 'admin_bob', role: 'admin', email: 'bob@example.com' }
-                  ], null, 2)
-                },
-                {
-                  id: 'resp-users-all',
-                  statusCode: 200,
-                  label: 'All users list',
-                  headers: [],
-                  rulesOperator: 'AND',
-                  rules: [],
-                  body: JSON.stringify([
-                    { id: '{{uuid}}', username: 'jane_doe', role: 'member', email: 'jane@example.com' },
-                    { id: '{{uuid}}', username: 'john_smith', role: 'member', email: 'john@example.com' },
-                    { id: '{{uuid}}', username: 'alice_jones', role: 'guest', email: 'alice@example.com' }
-                  ], null, 2)
-                }
-              ]
-            }
-          ]
-        },
-        {
-          id: 'env-ecommerce',
-          name: 'E-Commerce Catalog API',
-          endpointPrefix: 'catalog',
-          port: 3000,
-          latency: 250,
-          headers: [
-            { id: 'eh1', key: 'Content-Type', value: 'application/json' },
-            { id: 'eh2', key: 'Access-Control-Allow-Origin', value: '*' }
-          ],
-          routes: [
-            {
-              id: 'route-products',
-              method: 'get',
-              endpoint: 'products',
-              description: 'Retrieve products catalog',
-              latency: 0,
-              selectedResponseId: 'resp-products-all',
-              responses: [
-                {
-                  id: 'resp-products-electronics',
-                  statusCode: 200,
-                  label: 'Electronics Category Filter',
-                  headers: [],
-                  rulesOperator: 'AND',
-                  rules: [
-                    {
-                      id: 'rule-cat-electronics',
-                      target: 'query',
-                      property: 'category',
-                      operator: 'equals',
-                      value: 'electronics'
-                    }
-                  ],
-                  body: JSON.stringify([
-                    { id: 101, title: 'Smartwatch Series 5', price: 299, category: 'electronics', rating: 4.7 },
-                    { id: 102, title: 'Wireless ANC Headphones', price: 199, category: 'electronics', rating: 4.5 },
-                    { id: 103, title: 'UltraBook 15 Pro', price: 1299, category: 'electronics', rating: 4.9 }
-                  ], null, 2)
-                },
-                {
-                  id: 'resp-products-all',
-                  statusCode: 200,
-                  label: 'Complete Product Catalog',
-                  headers: [],
-                  rulesOperator: 'AND',
-                  rules: [],
-                  body: JSON.stringify([
-                    { id: 101, title: 'Smartwatch Series 5', price: 299, category: 'electronics', rating: 4.7 },
-                    { id: 102, title: 'Wireless ANC Headphones', price: 199, category: 'electronics', rating: 4.5 },
-                    { id: 201, title: 'Ergonomic Standing Desk', price: 450, category: 'furniture', rating: 4.8 },
-                    { id: 301, title: 'All-Weather Windbreaker', price: 85, category: 'apparel', rating: 4.2 }
-                  ], null, 2)
-                }
-              ]
-            }
-          ]
-        }
-      ];
-
-      // Save defaults to file
-      try {
-        fs.writeFileSync(CONFIG_FILE, JSON.stringify(environments, null, 2), 'utf8');
-        console.log(`[Storage] Initialized and saved default configurations to ${CONFIG_FILE}`);
-      } catch (e) {
-        console.error('[Storage] Failed to save default configurations to disk:', e);
-      }
+    environments = [];
   } catch (err) {
     console.error('Error loading initial configuration:', err);
   }
 }
 loadInitialConfig();
 
-// Helper to save to local disk file
-function saveLocalConfig(envs: MockEnvironment[]) {
-  try {
-    fs.writeFileSync(CONFIG_FILE, JSON.stringify(envs, null, 2), 'utf8');
-  } catch (e: any) {
-    console.error('[Local Storage] Error writing to mocks-config.json:', e?.message || e);
-  }
-}
-
 // Sync with Firestore Cloud Database if configured
 async function syncWithFirestore() {
   if (!db) {
-    console.log('[Firebase Sync] Skipping cloud sync, database connection not active.');
+    console.warn('[Firebase Sync] Firestore is not configured. Running without database persistence.');
     return;
   }
 
   try {
-    if (isClientSdk) {
-      const docRef = doc(db, 'config', 'mock-environments');
-      const snapshot = await getDoc(docRef);
-      if (snapshot.exists()) {
-        const data = snapshot.data();
-        if (data && Array.isArray(data.environments) && data.environments.length > 0) {
-          environments = data.environments;
-          saveLocalConfig(environments);
-          console.log(`[Firebase Sync] Initialized mock environments from Firestore (Web SDK). Count: ${environments.length}`);
-        }
-      } else {
-        await setDoc(docRef, {
-          environments: environments,
-          updatedAt: new Date().toISOString()
-        });
-        console.log(`[Firebase Sync] Seeded mock environments into Firestore (Web SDK). Count: ${environments.length}`);
-      }
+    const rootDocRef = db.collection('config').doc('mock-environments');
+    const environmentsCollectionRef = rootDocRef.collection('environments');
+    const snapshot = await environmentsCollectionRef.orderBy('position', 'asc').get();
 
-      onSnapshot(docRef, (snap) => {
-        if (snap && snap.exists()) {
-          const data = snap.data();
-          if (data && Array.isArray(data.environments) && data.environments.length > 0) {
-            environments = data.environments;
-            saveLocalConfig(environments);
-            console.log(`[Firebase Sync] Cloud synchronized. Live Mock environments updated. Count: ${environments.length}`);
-          }
-        }
-      }, (error) => {
-        console.log(`[Firebase Sync] Real-time listener note (${error?.message || error}). Using local disk persistence.`);
+    if (!snapshot.empty) {
+      environments = snapshot.docs.map((doc: any) => {
+        const data = doc.data();
+        const { position, updatedAt, schemaVersion, ...environment } = data;
+        return environment as MockEnvironment;
       });
-    } else {
-      const docRef = db.collection('config').doc('mock-environments');
-      const snapshot = await docRef.get();
-      if (snapshot.exists) {
-        const data = snapshot.data();
-        if (data && Array.isArray(data.environments) && data.environments.length > 0) {
-          environments = data.environments;
-          saveLocalConfig(environments);
-          console.log(`[Firebase Sync] Initialized mock environments from Firestore (Admin SDK). Count: ${environments.length}`);
-        }
-      } else {
-        await docRef.set({
-          environments: environments,
-          updatedAt: new Date().toISOString()
-        });
-        console.log(`[Firebase Sync] Seeded mock environments into Firestore (Admin SDK). Count: ${environments.length}`);
-      }
+      console.log(`[Firebase Sync] Initialized mock environments from Firestore subcollection. Count: ${environments.length}`);
+      return;
+    }
 
-      docRef.onSnapshot((snapshot: any) => {
-        if (snapshot && snapshot.exists) {
-          const data = snapshot.data();
-          if (data && Array.isArray(data.environments) && data.environments.length > 0) {
-            environments = data.environments;
-            saveLocalConfig(environments);
-            console.log(`[Firebase Sync] Cloud synchronized. Live Mock environments updated. Count: ${environments.length}`);
-          }
-        }
-      }, (error: any) => {
-        console.log(`[Firebase Sync] Real-time listener note (${error?.message || error}). Using local disk persistence.`);
-      });
+    const legacySnapshot = await rootDocRef.get();
+    if (legacySnapshot.exists) {
+      const data = legacySnapshot.data();
+      if (data && Array.isArray(data.environments)) {
+        environments = data.environments;
+        console.log(`[Firebase Sync] Initialized mock environments from legacy Firestore document. Count: ${environments.length}`);
+      }
     }
   } catch (err: any) {
-    const errMsg = err?.message || String(err);
-    console.log(`[Firebase Sync] Cloud database operation error (${errMsg.split('\n')[0]}). Falling back to local disk persistence.`);
+    const errMsg = getErrorMessage(err);
+    console.warn(`[Firebase Sync] Cloud database operation error (${errMsg.split('\n')[0]}). Continuing without preloaded Firestore data.`);
   }
 }
-syncWithFirestore();
+syncWithFirestore().catch((err) => {
+  console.error('[Firebase Sync] Unexpected startup failure while syncing Firestore.');
+  console.error(err);
+});
 
 // REST API for managing mock environments and configs
 app.get('/api/environments', (req, res) => {
@@ -461,36 +154,58 @@ app.get('/api/environments', (req, res) => {
 app.post('/api/environments', async (req, res) => {
   try {
     environments = req.body;
-    
-    // 1. Always write to local disk (mocks-config.json)
-    saveLocalConfig(environments);
 
-    // 2. Save to Firestore Cloud Database (if available)
-    if (db) {
-      try {
-        if (isClientSdk) {
-          const docRef = doc(db, 'config', 'mock-environments');
-          await setDoc(docRef, {
-            environments: environments,
-            updatedAt: new Date().toISOString()
-          });
-        } else {
-          await db.collection('config').doc('mock-environments').set({
-            environments: environments,
-            updatedAt: new Date().toISOString()
-          });
-        }
-        console.log(`[Firebase Sync] Saved ${environments.length} environments to Firestore Cloud Database.`);
-      } catch (dbErr: any) {
-        const errMsg = dbErr?.message || String(dbErr);
-        console.log(`[Firebase Sync] Cloud database write note (${errMsg.split('\n')[0]}). Saved to local disk.`);
-      }
+    if (!db) {
+      return res.status(503).json({
+        error: 'Firebase is not configured on this server. Saving requires Firestore.',
+      });
     }
+
+    const payload = {
+      environments: environments,
+      updatedAt: new Date().toISOString()
+    };
+
+    const rootDocRef = db.collection('config').doc('mock-environments');
+    const environmentsCollectionRef = rootDocRef.collection('environments');
+
+    const existingDocs = await environmentsCollectionRef.get();
+    const batch = db.batch();
+
+    existingDocs.docs.forEach((doc: any) => {
+      batch.delete(doc.ref);
+    });
+
+    environments.forEach((environment: MockEnvironment, index: number) => {
+      batch.set(environmentsCollectionRef.doc(environment.id), {
+        ...environment,
+        position: index,
+        updatedAt: payload.updatedAt,
+        schemaVersion: 2
+      });
+    });
+
+    batch.set(rootDocRef, {
+      schemaVersion: 2,
+      environmentCount: environments.length,
+      updatedAt: payload.updatedAt
+    });
+
+    await batch.commit();
+    console.log(`[Firebase Sync] Saved ${environments.length} environments to Firestore Cloud Database (subcollection storage).`);
 
     res.json({ success: true, message: 'Configuration saved successfully!' });
   } catch (err) {
     console.error('Error writing config:', err);
-    res.status(500).json({ error: 'Failed to write configuration file' });
+    const errMsg = getErrorMessage(err);
+    const help = dbIdInUse
+      ? `The configured Firestore database "${dbIdInUse}" could not be found. Create that database in Firebase or clear FIRESTORE_DATABASE_ID to use the default database.`
+      : 'Check that the Firebase service account belongs to the same project as the default Firestore database and that Firestore is enabled.';
+    res.status(500).json({
+      error: 'Failed to write configuration to Firestore',
+      details: errMsg.split('\n')[0],
+      hint: help
+    });
   }
 });
 
