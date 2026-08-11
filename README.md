@@ -1,81 +1,147 @@
-# API Mock Server 🚀
+# API Mock Server
 
-A high-fidelity, developer-focused API mock server and request logger. Create sandboxed mock environments, define custom REST endpoints, simulate realistic network latencies, configure custom response headers, and view detailed request payloads with a live request logger—all in a beautiful, high-contrast dark interface.
+API Mock Server is a full-stack mock API workspace for designing isolated environments, creating flexible REST routes, testing payload validation, and watching live request logs in a dark, high-contrast UI.
 
----
+It is built with Express, React, Vite, Tailwind CSS, and Firestore-backed persistence.
 
-## 🌟 Key Features
+## Screenshots
 
-*   **Multi-Environment Support**: Group mock endpoints into isolated environments (e.g., Development, Staging, v1 API) with customizable base prefixes.
-*   **Flexible Mock Routes**: Define paths supporting dynamic parameters (e.g., `/users/:id`), choose HTTP methods (GET, POST, PUT, DELETE, etc.), status codes, and manage response bodies.
-*   **Simulated Network Latency**: Add simulated response delays (milliseconds) to test how your frontends handle loading states or timeouts.
-*   **Live Request Logger**: Capture real-time incoming traffic. Drill down into client IP addresses, matched mock configurations, complete request headers, query parameters, and raw JSON request bodies.
-*   **Full-Stack Power**: Features an Express-based Node.js backend acting as the mock-proxy/request interceptor and a sleek React 18 single-page application frontend built with Vite and Tailwind CSS.
-*   **Persistent Configuration**: Integrated with robust storage backing to preserve environments and logs reliably.
+![API Mock Server screenshots](docs/images/readme-screenshots.png)
 
----
+The collage above combines the main Mocks Designer view and the Server Logs view.
 
-## 🛠️ Tech Stack
+## What It Does
 
-*   **Frontend**: React 18, Vite, Tailwind CSS, Lucide Icons, Framer Motion
-*   **Backend**: Node.js, Express, tsx (for TS development), esbuild (for production optimization)
+- Create multiple mock environments with their own URL prefixes.
+- Define mock routes with dynamic params like `/users/:id` or wildcard matching.
+- Configure multiple responses per route, each with status, headers, body, and matching rules.
+- Simulate latency to test client timeout and loading-state behavior.
+- Validate request bodies against pasted TypeScript interfaces or JSON schema-like objects.
+- Inspect live request logs with headers, query parameters, response details, and latency.
+- Persist configurations in Firestore so your mock setup survives restarts.
 
----
+## Key Features
 
-## 🚀 Local Setup Guide
+- Multi-environment mock design with isolated route trees.
+- Route duplication, reordering, import/export-friendly workflows, and global headers.
+- Response editor with JSON body formatting and header editing.
+- Rule-based response matching for headers, query params, body values, and route params.
+- Automatic CORS handling for `OPTIONS` requests.
+- Built-in request logger with filter/search controls.
+- Save/discard workflow so edits stay local until you explicitly save.
 
-Follow these steps to run the API Mock Server on your local machine:
+## Tech Stack
 
-### 1. Prerequisites
-Ensure you have [Node.js](https://nodejs.org/) (v18 or higher) and `npm` installed.
+- Frontend: React 19, Vite, Tailwind CSS, Lucide Icons, Motion
+- Backend: Node.js, Express, Firebase Admin SDK, tsx, esbuild
+- Storage: Firestore
 
-### 2. Install Dependencies
-Clone the repository, navigate to the root directory, and run:
+## Project Structure
+
+- [`server.ts`](server.ts): Express server, Firestore persistence, and mock route handler.
+- [`src/App.tsx`](src/App.tsx): Main app shell, tabs, save flow, and state management.
+- [`src/components/`](src/components): Sidebar, route editor, response editor, settings, and logs UI.
+- [`src/lib/`](src/lib): Template parsing and slug utilities.
+- [`src/types.ts`](src/types.ts): Shared TypeScript models.
+
+## Local Setup
+
+### Prerequisites
+
+- Node.js 18 or newer
+- npm
+
+### Install
+
 ```bash
 npm install
 ```
 
-### 3. Run Development Server
-Start the client and server concurrently:
+### Start Development Server
+
 ```bash
 npm run dev
 ```
-Open [http://localhost:3000](http://localhost:3000) in your browser.
 
-### 4. Build for Production
-To bundle the frontend application and compile the server:
+Open `http://localhost:3000`.
+
+### Build For Production
+
 ```bash
 npm run build
 npm start
 ```
 
----
+## Configuration
 
-## ☁️ How to Deploy (FREE Platforms)
+The app reads these environment variables:
 
-Since this app uses a full-stack **Express backend** (to handle routing, wildcard matching, and request logging), traditional static hosts like Vercel or Netlify won't support it out of the box. Instead, you can deploy it for **100% free** on these container-hosting platforms:
+- `GEMINI_API_KEY`: Used for Gemini-powered features if enabled in the app.
+- `APP_URL`: Host URL injected by the platform.
+- `FIREBASE_SERVICE_ACCOUNT_JSON`: Required for Firestore persistence outside the AI Studio runtime.
+- `FIRESTORE_DATABASE_ID`: Optional. Leave blank to use the default Firestore database.
 
-### Option A: Render (Recommended & Free)
-[Render](https://render.com/) offers a generous free tier for Web Services.
-1. Connect your GitHub repository to Render.
-2. Create a new **Web Service**.
-3. Configure the following build settings:
-   *   **Runtime**: `Node`
-   *   **Build Command**: `npm install && npm run build`
-   *   **Start Command**: `npm start`
-4. Set the environment variable `FIREBASE_SERVICE_ACCOUNT_JSON` to your Firebase service account JSON, either as raw JSON or base64-encoded JSON.
-5. If you created a named Firestore database, set `FIRESTORE_DATABASE_ID` too. If not, leave it blank and the app will use the default database.
-6. Deploy! Your app will go live with an `onrender.com` URL and persist mock data only in Firestore.
+Example:
 
-### Option B: Railway (Fastest Setup)
-[Railway](https://railway.app/) offers quick, zero-config deployments.
-1. Create an account and start a new project.
-2. Connect your GitHub repo.
-3. Railway will automatically detect the `package.json` file. It will build and run the project using `npm run build` and `npm start`.
-4. Your service will be online in seconds with a free custom subdomain.
+```bash
+FIREBASE_SERVICE_ACCOUNT_JSON='{"type":"service_account", "...":"..."}'
+FIRESTORE_DATABASE_ID=""
+```
 
-### Option C: Fly.io (High Performance)
-[Fly.io](https://fly.io/) lets you run apps globally on small micro-VMs.
-1. Install the `flyctl` CLI.
-2. Run `fly launch` in your project folder.
-3. Fly.io will automatically scan the project, create a `Dockerfile` if needed, and host your full-stack app on their free allowance tier.
+## Firestore Persistence
+
+The server uses the Firebase Admin SDK and saves data to Firestore when configuration is available.
+
+Important behavior:
+
+- The app starts with local in-memory state.
+- Nothing is written to Firestore until you click `Save Changes`.
+- Saves now use a Firestore subcollection layout so large mock configurations do not rely on one giant document.
+- If you delete every mock environment and then save, Firestore is updated to match that empty state.
+- If Firestore is unavailable, the app still runs, but persistence is disabled.
+
+## How To Use
+
+1. Create an environment.
+2. Add a route and choose an HTTP method.
+3. Set the endpoint path relative to the environment prefix.
+4. Add one or more responses.
+5. Configure headers, body, status, latency, and optional matching rules.
+6. Click `Save Changes`.
+7. Test the endpoint through `/mock/:envId/...`.
+
+## Troubleshooting
+
+### Save fails with Firestore errors
+
+- Confirm the Firebase service account belongs to the same project as the Firestore database.
+- If you use the default database, leave `FIRESTORE_DATABASE_ID` empty.
+- Check that Firestore is enabled for the project.
+
+### Mock route not found
+
+- Confirm the environment ID or slug in the URL.
+- Make sure the route path matches after the environment prefix is stripped.
+- Check the HTTP method on the route.
+
+### Changes reappear after refresh
+
+- You probably edited the local state but did not click `Save Changes`.
+- Refreshing reloads the last saved Firestore state.
+
+## Deployment
+
+This app needs a Node.js runtime because it uses an Express server.
+
+Recommended deployment flow:
+
+1. Build the app with `npm run build`
+2. Start the server with `npm start`
+3. Set your Firebase service account JSON in the host environment
+
+
+## Notes On Saving
+
+The save button in the UI writes the current environment list to Firestore only when you explicitly choose to save. That helps prevent accidental overwrites while editing.
+
+If you are working with a long list of routes or environments, the new Firestore layout is much safer than storing everything in one document.
