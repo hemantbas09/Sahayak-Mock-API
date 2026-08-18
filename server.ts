@@ -9,7 +9,7 @@ import { parseTemplate } from './src/lib/templates';
 import { slugify } from './src/lib/slugify';
 
 const app = express();
-const PORT = 3000;
+const PORT = Number(process.env.PORT ?? 3000);
 
 function resolveFirestoreDatabaseId(): string | null {
   const envDbId = process.env.FIRESTORE_DATABASE_ID?.trim();
@@ -26,6 +26,7 @@ function getErrorMessage(err: unknown): string {
 // Initialize Firebase with the Admin SDK only.
 let db: any = null;
 let dbIdInUse: string | null = null;
+const FIRESTORE_WRITE_BATCH_SIZE = 200;
 
 const serviceAccountEnv = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
 
@@ -146,6 +147,23 @@ syncWithFirestore().catch((err) => {
   console.error(err);
 });
 
+async function commitFirestoreOperations(operations: Array<(batch: any) => void>) {
+  if (!db || operations.length === 0) {
+    return;
+  }
+
+  for (let index = 0; index < operations.length; index += FIRESTORE_WRITE_BATCH_SIZE) {
+    const batch = db.batch();
+    const chunk = operations.slice(index, index + FIRESTORE_WRITE_BATCH_SIZE);
+
+    for (const applyOperation of chunk) {
+      applyOperation(batch);
+    }
+
+    await batch.commit();
+  }
+}
+
 // REST API for managing mock environments and configs
 app.get('/api/environments', (req, res) => {
   res.json(environments);
@@ -169,14 +187,15 @@ app.post('/api/environments', async (req, res) => {
     const rootDocRef = db.collection('config').doc('mock-environments');
     const environmentsCollectionRef = rootDocRef.collection('environments');
 
-    const existingDocs = await environmentsCollectionRef.get();
-    const batch = db.batch();
+    const existingDocRefs = typeof environmentsCollectionRef.listDocuments === 'function'
+      ? await environmentsCollectionRef.listDocuments()
+      : (await environmentsCollectionRef.get()).docs.map((doc: any) => doc.ref);
 
-    existingDocs.docs.forEach((doc: any) => {
-      batch.delete(doc.ref);
+    const deleteOperations = existingDocRefs.map((docRef: any) => (batch: any) => {
+      batch.delete(docRef);
     });
 
-    environments.forEach((environment: MockEnvironment, index: number) => {
+    const setOperations = environments.map((environment: MockEnvironment, index: number) => (batch: any) => {
       batch.set(environmentsCollectionRef.doc(environment.id), {
         ...environment,
         position: index,
@@ -185,13 +204,16 @@ app.post('/api/environments', async (req, res) => {
       });
     });
 
-    batch.set(rootDocRef, {
+    await commitFirestoreOperations([...deleteOperations, ...setOperations]);
+
+    const rootBatch = db.batch();
+    rootBatch.set(rootDocRef, {
       schemaVersion: 2,
       environmentCount: environments.length,
       updatedAt: payload.updatedAt
     });
+    await rootBatch.commit();
 
-    await batch.commit();
     console.log(`[Firebase Sync] Saved ${environments.length} environments to Firestore Cloud Database (subcollection storage).`);
 
     res.json({ success: true, message: 'Configuration saved successfully!' });
@@ -959,7 +981,7 @@ async function startServer() {
   }
 
   app.listen(PORT, "0.0.0.0", () => {
-    console.log(`API Mock Server running on http://localhost:${PORT}`);
+    console.log(`API Mock Server running on port ${PORT}`);
   });
 }
 

@@ -101,12 +101,21 @@ export default function App() {
       });
 
       if (!res.ok) {
-        const errorText = await res.text().catch(() => res.statusText);
-        console.error('Failed to save environments to server:', errorText);
-        return;
+        const responseText = await res.text().catch(() => '');
+        let serverMessage = responseText || res.statusText;
+
+        try {
+          const parsed = JSON.parse(responseText);
+          serverMessage = [parsed.error, parsed.details, parsed.hint].filter(Boolean).join(' | ') || serverMessage;
+        } catch {
+          // Keep the raw response text when the server did not send JSON.
+        }
+
+        throw new Error(serverMessage || 'Failed to save environments to server.');
       }
     } catch (err) {
       console.error('Failed to save environments to server:', err);
+      throw err;
     } finally {
       setIsSaving(false);
     }
@@ -162,6 +171,11 @@ export default function App() {
       setHasChanges(false);
     } catch (err) {
       console.error('Failed to save environments:', err);
+      setAlertModal({
+        isOpen: true,
+        title: 'Save Failed',
+        message: err instanceof Error ? err.message : 'The server rejected the save request.'
+      });
     }
   };
 
