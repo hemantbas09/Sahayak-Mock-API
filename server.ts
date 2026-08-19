@@ -78,6 +78,7 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 let environments: MockEnvironment[] = [];
 let requestLogs: RequestLog[] = [];
 const MAX_LOGS = 100;
+let firestoreSaveQueue: Promise<void> = Promise.resolve();
 
 // Helper to get nested properties for rule evaluations
 function getNestedValue(obj: any, path: string): any {
@@ -132,6 +133,17 @@ syncWithFirestore().catch((err) => {
   console.error(err);
 });
 
+function enqueueFirestoreSave(job: () => Promise<void>) {
+  firestoreSaveQueue = firestoreSaveQueue
+    .then(() => job())
+    .catch((err) => {
+      console.error('[Firebase Sync] Background Firestore save failed.');
+      console.error(err);
+    });
+
+  return firestoreSaveQueue;
+}
+
 // REST API for managing mock environments and configs
 app.get('/api/environments', (req, res) => {
   res.json(environments);
@@ -150,14 +162,14 @@ app.post('/api/environments', async (req, res) => {
       : req.body;
 
     const nextEnvironments = applyEnvironmentSavePayloadToSnapshot(environments, savePayload);
-
-    await saveEnvironmentChangesToFirestore(db, savePayload, nextEnvironments.length);
-
     environments = nextEnvironments;
 
-    console.log(`[Firebase Sync] Saved delta to Firestore Cloud Database. Environments: ${environments.length}`);
+    void enqueueFirestoreSave(async () => {
+      await saveEnvironmentChangesToFirestore(db, savePayload, nextEnvironments.length);
+      console.log(`[Firebase Sync] Saved delta to Firestore Cloud Database. Environments: ${nextEnvironments.length}`);
+    });
 
-    res.json({ success: true, message: 'Configuration saved successfully!' });
+    res.status(202).json({ success: true, queued: true, message: 'Configuration save queued successfully!' });
   } catch (err) {
     console.error('Error writing config:', err);
     const errMsg = getErrorMessage(err);
