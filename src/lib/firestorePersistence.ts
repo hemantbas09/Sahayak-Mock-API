@@ -1,4 +1,13 @@
 import { MockEnvironment, MockRoute, RouteResponse } from '../types';
+import type {
+  EnvironmentDelete,
+  EnvironmentSavePayload,
+  EnvironmentUpsert,
+  ResponseDelete,
+  ResponseUpsert,
+  RouteDelete,
+  RouteUpsert
+} from './environmentSync';
 
 const FIRESTORE_SCHEMA_VERSION = 3;
 const ROOT_COLLECTION = 'config';
@@ -8,6 +17,22 @@ type FirestoreOperation = (writer: any) => void;
 
 function getRootDocumentRef(db: any) {
   return db.collection(ROOT_COLLECTION).doc(ROOT_DOCUMENT);
+}
+
+function getEnvironmentsCollectionRef(db: any) {
+  return getRootDocumentRef(db).collection('environments');
+}
+
+function getEnvironmentDocRef(db: any, environmentId: string) {
+  return getEnvironmentsCollectionRef(db).doc(environmentId);
+}
+
+function getRouteDocRef(db: any, environmentId: string, routeId: string) {
+  return getEnvironmentDocRef(db, environmentId).collection('routes').doc(routeId);
+}
+
+function getResponseDocRef(db: any, environmentId: string, routeId: string, responseId: string) {
+  return getRouteDocRef(db, environmentId, routeId).collection('responses').doc(responseId);
 }
 
 async function listDocumentRefs(collectionRef: any): Promise<any[]> {
@@ -84,210 +109,80 @@ export function hydrateResponseDocument(data: any): RouteResponse {
   return stripMetadata(data, ['position', 'schemaVersion', 'updatedAt']) as RouteResponse;
 }
 
-async function collectDeleteRouteTreeOperations(routeDocRef: any): Promise<FirestoreOperation[]> {
+function buildDeleteOperations(db: any, payload: EnvironmentSavePayload): FirestoreOperation[] {
   const operations: FirestoreOperation[] = [];
-  const responseRefs = await listDocumentRefs(routeDocRef.collection('responses'));
 
-  for (const responseRef of responseRefs) {
-    operations.push((writer) => writer.delete(responseRef));
-  }
-
-  operations.push((writer) => writer.delete(routeDocRef));
-  return operations;
-}
-
-async function collectDeleteEnvironmentTreeOperations(environmentDocRef: any): Promise<FirestoreOperation[]> {
-  const operations: FirestoreOperation[] = [];
-  const routeRefs = await listDocumentRefs(environmentDocRef.collection('routes'));
-
-  for (const routeRef of routeRefs) {
-    operations.push(...await collectDeleteRouteTreeOperations(routeRef));
-  }
-
-  operations.push((writer) => writer.delete(environmentDocRef));
-  return operations;
-}
-
-async function collectUpsertEnvironmentTreeOperations(
-  environmentDocRef: any,
-  environment: MockEnvironment,
-  position: number,
-  updatedAt: string
-): Promise<FirestoreOperation[]> {
-  const operations: FirestoreOperation[] = [];
-  const routesCollectionRef = environmentDocRef.collection('routes');
-  const existingRouteRefs = await listDocumentRefs(routesCollectionRef);
-  const nextRouteIds = new Set(environment.routes.map((route) => route.id));
-
-  operations.push((writer) => {
-    writer.set(environmentDocRef, serializeEnvironmentDocument(environment, position, updatedAt));
-  });
-
-  for (const routeRef of existingRouteRefs) {
-    if (!nextRouteIds.has(routeRef.id)) {
-      operations.push(...await collectDeleteRouteTreeOperations(routeRef));
-    }
-  }
-
-  for (const [routeIndex, route] of environment.routes.entries()) {
-    const routeDocRef = routesCollectionRef.doc(route.id);
-    const responsesCollectionRef = routeDocRef.collection('responses');
-    const existingResponseRefs = await listDocumentRefs(responsesCollectionRef);
-    const nextResponseIds = new Set(route.responses.map((response) => response.id));
-
-    operations.push((writer) => {
-      writer.set(routeDocRef, serializeRouteDocument(route, routeIndex, updatedAt));
-    });
-
-    for (const responseRef of existingResponseRefs) {
-      if (!nextResponseIds.has(responseRef.id)) {
-        operations.push((writer) => writer.delete(responseRef));
+  for (const environmentDelete of payload.environmentDeletes) {
+    for (const routeDelete of environmentDelete.routeDeletes) {
+      for (const responseId of routeDelete.responseIds) {
+        operations.push((writer) => writer.delete(getResponseDocRef(db, environmentDelete.environmentId, routeDelete.routeId, responseId)));
       }
+
+      operations.push((writer) => writer.delete(getRouteDocRef(db, environmentDelete.environmentId, routeDelete.routeId)));
     }
 
-    for (const [responseIndex, response] of route.responses.entries()) {
-      operations.push((writer) => {
-        writer.set(responsesCollectionRef.doc(response.id), serializeResponseDocument(response, responseIndex, updatedAt));
-      });
+    operations.push((writer) => writer.delete(getEnvironmentDocRef(db, environmentDelete.environmentId)));
+  }
+
+  for (const routeDelete of payload.routeDeletes) {
+    for (const responseId of routeDelete.responseIds) {
+      operations.push((writer) => writer.delete(getResponseDocRef(db, routeDelete.environmentId, routeDelete.routeId, responseId)));
     }
+
+    operations.push((writer) => writer.delete(getRouteDocRef(db, routeDelete.environmentId, routeDelete.routeId)));
+  }
+
+  for (const responseDelete of payload.responseDeletes) {
+    operations.push((writer) => writer.delete(getResponseDocRef(db, responseDelete.environmentId, responseDelete.routeId, responseDelete.responseId)));
   }
 
   return operations;
 }
 
-async function collectSaveOperations(db: any, environments: MockEnvironment[], updatedAt: string): Promise<FirestoreOperation[]> {
+function buildUpsertOperations(db: any, payload: EnvironmentSavePayload, updatedAt: string): FirestoreOperation[] {
   const operations: FirestoreOperation[] = [];
-  const rootDocRef = getRootDocumentRef(db);
-  const environmentsCollectionRef = rootDocRef.collection('environments');
 
-  operations.push((writer) => {
+  for (const { environment, position } of payload.environmentUpserts) {
+    operations.push((writer) => writer.set(
+      getEnvironmentDocRef(db, environment.id),
+      serializeEnvironmentDocument(environment, position, updatedAt)
+    ));
+  }
+
+  for (const { environmentId, route, position } of payload.routeUpserts) {
+    operations.push((writer) => writer.set(
+      getRouteDocRef(db, environmentId, route.id),
+      serializeRouteDocument(route, position, updatedAt)
+    ));
+  }
+
+  for (const { environmentId, routeId, response, position } of payload.responseUpserts) {
+    operations.push((writer) => writer.set(
+      getResponseDocRef(db, environmentId, routeId, response.id),
+      serializeResponseDocument(response, position, updatedAt)
+    ));
+  }
+
+  return operations;
+}
+
+export async function saveEnvironmentChangesToFirestore(db: any, payload: EnvironmentSavePayload, environmentCount: number) {
+  const updatedAt = new Date().toISOString();
+  const writer = db.bulkWriter();
+  const rootDocRef = getRootDocumentRef(db);
+
+  try {
     writer.set(rootDocRef, {
-      environmentCount: environments.length,
+      environmentCount,
       schemaVersion: FIRESTORE_SCHEMA_VERSION,
       updatedAt
     });
-  });
 
-  const existingEnvironmentRefs = await listDocumentRefs(environmentsCollectionRef);
-  const nextEnvironmentIds = new Set(environments.map((environment) => environment.id));
-
-  for (const environmentRef of existingEnvironmentRefs) {
-    if (!nextEnvironmentIds.has(environmentRef.id)) {
-      operations.push(...await collectDeleteEnvironmentTreeOperations(environmentRef));
-    }
-  }
-
-  for (const [environmentIndex, environment] of environments.entries()) {
-    const environmentDocRef = environmentsCollectionRef.doc(environment.id);
-    const routesCollectionRef = environmentDocRef.collection('routes');
-    const existingRouteRefs = await listDocumentRefs(routesCollectionRef);
-    const nextRouteIds = new Set(environment.routes.map((route) => route.id));
-
-    operations.push((writer) => {
-      writer.set(environmentDocRef, serializeEnvironmentDocument(environment, environmentIndex, updatedAt));
-    });
-
-    for (const routeRef of existingRouteRefs) {
-      if (!nextRouteIds.has(routeRef.id)) {
-        operations.push(...await collectDeleteRouteTreeOperations(routeRef));
-      }
-    }
-
-    for (const [routeIndex, route] of environment.routes.entries()) {
-      const routeDocRef = routesCollectionRef.doc(route.id);
-      const responsesCollectionRef = routeDocRef.collection('responses');
-      const existingResponseRefs = await listDocumentRefs(responsesCollectionRef);
-      const nextResponseIds = new Set(route.responses.map((response) => response.id));
-
-      operations.push((writer) => {
-        writer.set(routeDocRef, serializeRouteDocument(route, routeIndex, updatedAt));
-      });
-
-      for (const responseRef of existingResponseRefs) {
-        if (!nextResponseIds.has(responseRef.id)) {
-          operations.push((writer) => writer.delete(responseRef));
-        }
-      }
-
-      for (const [responseIndex, response] of route.responses.entries()) {
-        operations.push((writer) => {
-          writer.set(responsesCollectionRef.doc(response.id), serializeResponseDocument(response, responseIndex, updatedAt));
-        });
-      }
-    }
-  }
-
-  return operations;
-}
-
-export async function saveEnvironmentsToFirestore(db: any, environments: MockEnvironment[]) {
-  const updatedAt = new Date().toISOString();
-  const operations = await collectSaveOperations(db, environments, updatedAt);
-
-  if (operations.length === 0) {
-    return;
-  }
-
-  const writer = db.bulkWriter();
-
-  try {
-    for (const operation of operations) {
+    for (const operation of buildDeleteOperations(db, payload)) {
       operation(writer);
     }
 
-    await writer.close();
-  } catch (err) {
-    await writer.close().catch(() => {});
-    throw err;
-  }
-}
-
-export async function saveEnvironmentChangesToFirestore(
-  db: any,
-  upserts: Array<{ environment: MockEnvironment; position: number }>,
-  deletedIds: string[]
-) {
-  const updatedAt = new Date().toISOString();
-  const operations: FirestoreOperation[] = [];
-  const rootDocRef = getRootDocumentRef(db);
-  const environmentsCollectionRef = rootDocRef.collection('environments');
-  const existingEnvironmentRefs = await listDocumentRefs(environmentsCollectionRef);
-  const existingEnvironmentIds = new Set(existingEnvironmentRefs.map((docRef: any) => docRef.id));
-  const deletedIdSet = new Set(deletedIds);
-
-  const deletedExistingCount = deletedIds.filter((id) => existingEnvironmentIds.has(id)).length;
-  const addedCount = upserts.filter(({ environment }) => !existingEnvironmentIds.has(environment.id) && !deletedIdSet.has(environment.id)).length;
-
-  operations.push((writer) => {
-    writer.set(rootDocRef, {
-      environmentCount: existingEnvironmentRefs.length - deletedExistingCount + addedCount,
-      schemaVersion: FIRESTORE_SCHEMA_VERSION,
-      updatedAt
-    });
-  });
-
-  for (const deletedId of deletedIds) {
-    if (!existingEnvironmentIds.has(deletedId)) {
-      continue;
-    }
-
-    const environmentDocRef = environmentsCollectionRef.doc(deletedId);
-    operations.push(...await collectDeleteEnvironmentTreeOperations(environmentDocRef));
-  }
-
-  for (const { environment, position } of upserts) {
-    const environmentDocRef = environmentsCollectionRef.doc(environment.id);
-    operations.push(...await collectUpsertEnvironmentTreeOperations(environmentDocRef, environment, position, updatedAt));
-  }
-
-  if (operations.length === 0) {
-    return;
-  }
-
-  const writer = db.bulkWriter();
-
-  try {
-    for (const operation of operations) {
+    for (const operation of buildUpsertOperations(db, payload, updatedAt)) {
       operation(writer);
     }
 

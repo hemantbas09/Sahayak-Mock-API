@@ -93,7 +93,7 @@ export default function App() {
     return () => clearInterval(interval);
   }, [selectedEnvId, hasChanges]);
 
-  const flushToFirebase = async (payload: { upserts: Array<{ environment: MockEnvironment; position: number }>; deletedIds: string[] }) => {
+  const flushToFirebase = async (payload: any) => {
     setIsSaving(true);
     try {
       const res = await fetch('/api/environments', {
@@ -168,14 +168,21 @@ export default function App() {
 
   // Save current state to Firebase only when the user clicks Save.
   const handleSaveChanges = async () => {
+    const payload = buildEnvironmentSavePayload(environments, savedEnvironments);
+
+    if (
+      payload.environmentUpserts.length === 0 &&
+      payload.routeUpserts.length === 0 &&
+      payload.responseUpserts.length === 0 &&
+      payload.environmentDeletes.length === 0 &&
+      payload.routeDeletes.length === 0 &&
+      payload.responseDeletes.length === 0
+    ) {
+      setHasChanges(false);
+      return;
+    }
+
     try {
-      const payload = buildEnvironmentSavePayload(environments, savedEnvironments);
-
-      if (payload.upserts.length === 0 && payload.deletedIds.length === 0) {
-        setHasChanges(false);
-        return;
-      }
-
       await flushToFirebase(payload);
       setSavedEnvironments(environments);
       setHasChanges(false);

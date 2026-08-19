@@ -7,8 +7,8 @@ import { getFirestore as getAdminFirestore } from 'firebase-admin/firestore';
 import { MockEnvironment, RequestLog, HttpMethod } from './src/types';
 import { parseTemplate } from './src/lib/templates';
 import { slugify } from './src/lib/slugify';
-import { loadPersistedEnvironments, saveEnvironmentChangesToFirestore, saveEnvironmentsToFirestore } from './src/lib/firestorePersistence';
-import { mergeEnvironmentSavePayload } from './src/lib/environmentSync';
+import { loadPersistedEnvironments, saveEnvironmentChangesToFirestore } from './src/lib/firestorePersistence';
+import { applyEnvironmentSavePayloadToSnapshot, buildEnvironmentSavePayload } from './src/lib/environmentSync';
 
 const app = express();
 const PORT = Number(process.env.PORT ?? 3000);
@@ -145,22 +145,17 @@ app.post('/api/environments', async (req, res) => {
       });
     }
 
-    if (Array.isArray(req.body)) {
-      environments = req.body;
-      await saveEnvironmentsToFirestore(db, environments);
-      console.log(`[Firebase Sync] Saved ${environments.length} environments to Firestore Cloud Database (subcollection storage).`);
-    } else {
-      const upserts = Array.isArray(req.body?.upserts) ? req.body.upserts : [];
-      const deletedIds = Array.isArray(req.body?.deletedIds) ? req.body.deletedIds : [];
+    const savePayload = Array.isArray(req.body)
+      ? buildEnvironmentSavePayload(req.body, environments)
+      : req.body;
 
-      environments = mergeEnvironmentSavePayload(environments, {
-        upserts,
-        deletedIds
-      });
+    const nextEnvironments = applyEnvironmentSavePayloadToSnapshot(environments, savePayload);
 
-      await saveEnvironmentChangesToFirestore(db, upserts, deletedIds);
-      console.log(`[Firebase Sync] Saved ${upserts.length} changed environment(s) and deleted ${deletedIds.length} environment(s) to Firestore Cloud Database.`);
-    }
+    await saveEnvironmentChangesToFirestore(db, savePayload, nextEnvironments.length);
+
+    environments = nextEnvironments;
+
+    console.log(`[Firebase Sync] Saved delta to Firestore Cloud Database. Environments: ${environments.length}`);
 
     res.json({ success: true, message: 'Configuration saved successfully!' });
   } catch (err) {

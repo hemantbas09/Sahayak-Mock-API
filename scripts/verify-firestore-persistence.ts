@@ -7,7 +7,7 @@ import {
   serializeResponseDocument,
   serializeRouteDocument
 } from '../src/lib/firestorePersistence';
-import { buildEnvironmentSavePayload, mergeEnvironmentSavePayload, stableStringify } from '../src/lib/environmentSync';
+import { applyEnvironmentSavePayloadToSnapshot, buildEnvironmentSavePayload, stableStringify } from '../src/lib/environmentSync';
 import { MockEnvironment } from '../src/types';
 
 const largeBody = 'x'.repeat(250_000);
@@ -79,15 +79,67 @@ const roundTrippedEnvironment: MockEnvironment = {
 
 assert.deepEqual(roundTrippedEnvironment, environment);
 
-const savedEnvironments: MockEnvironment[] = Array.from({ length: 4 }, (_, index) => ({
-  id: `env-${index + 1}`,
-  name: `Saved Env ${index + 1}`,
-  endpointPrefix: '',
-  port: 3000,
-  latency: 0,
-  headers: [],
-  routes: []
-}));
+const savedEnvironments: MockEnvironment[] = [
+  {
+    id: 'env-1',
+    name: 'Saved Env 1',
+    endpointPrefix: '',
+    port: 3000,
+    latency: 0,
+    headers: [],
+    routes: [
+      {
+        id: 'route-1',
+        method: 'get',
+        endpoint: 'files',
+        description: 'File route',
+        latency: 0,
+        selectedResponseId: 'resp-1',
+        responses: [
+          {
+            id: 'resp-1',
+            statusCode: 200,
+            label: 'Default',
+            headers: [],
+            body: '{"ok":true}',
+            rules: [],
+            rulesOperator: 'AND'
+          }
+        ]
+      }
+    ]
+  }
+];
+
+const updatedResponseOnly: MockEnvironment[] = [
+  {
+    ...savedEnvironments[0],
+    routes: [
+      {
+        ...savedEnvironments[0].routes[0],
+        responses: [
+          {
+            ...savedEnvironments[0].routes[0].responses[0],
+            body: '{"ok":false}'
+          }
+        ]
+      }
+    ]
+  }
+];
+
+const responsePayload = buildEnvironmentSavePayload(updatedResponseOnly, savedEnvironments);
+assert.equal(responsePayload.environmentUpserts.length, 0);
+assert.equal(responsePayload.routeUpserts.length, 0);
+assert.equal(responsePayload.responseUpserts.length, 1);
+assert.equal(responsePayload.responseUpserts[0].response.id, 'resp-1');
+assert.deepEqual(responsePayload.environmentDeletes, []);
+assert.deepEqual(responsePayload.routeDeletes, []);
+assert.deepEqual(responsePayload.responseDeletes, []);
+assert.equal(
+  stableStringify(applyEnvironmentSavePayloadToSnapshot(savedEnvironments, responsePayload)),
+  stableStringify(updatedResponseOnly)
+);
 
 const currentWithAddition: MockEnvironment[] = [
   ...savedEnvironments,
@@ -103,27 +155,11 @@ const currentWithAddition: MockEnvironment[] = [
 ];
 
 const additionPayload = buildEnvironmentSavePayload(currentWithAddition, savedEnvironments);
-assert.equal(additionPayload.upserts.length, 1);
-assert.equal(additionPayload.upserts[0].environment.id, 'env-5');
-assert.deepEqual(additionPayload.deletedIds, []);
+assert.equal(additionPayload.environmentUpserts.length, 1);
+assert.equal(additionPayload.environmentUpserts[0].environment.id, 'env-5');
 assert.equal(
-  stableStringify(mergeEnvironmentSavePayload(savedEnvironments, additionPayload)),
+  stableStringify(applyEnvironmentSavePayloadToSnapshot(savedEnvironments, additionPayload)),
   stableStringify(currentWithAddition)
-);
-
-const updatedExistingOnly = savedEnvironments.map((environment) => (
-  environment.id === 'env-3'
-    ? { ...environment, name: 'Saved Env 3 Updated' }
-    : environment
-));
-
-const updatePayload = buildEnvironmentSavePayload(updatedExistingOnly, savedEnvironments);
-assert.equal(updatePayload.upserts.length, 1);
-assert.equal(updatePayload.upserts[0].environment.id, 'env-3');
-assert.deepEqual(updatePayload.deletedIds, []);
-assert.equal(
-  stableStringify(mergeEnvironmentSavePayload(savedEnvironments, updatePayload)),
-  stableStringify(updatedExistingOnly)
 );
 
 console.log('Firestore persistence regression check passed.');
