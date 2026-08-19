@@ -17,6 +17,7 @@ import Sidebar from './components/Sidebar';
 import RouteEditor from './components/RouteEditor';
 import EnvironmentSettings from './components/EnvironmentSettings';
 import LogViewer from './components/LogViewer';
+import { buildEnvironmentSavePayload } from './lib/environmentSync';
 
 type MainTab = 'mocks' | 'logs';
 
@@ -31,6 +32,7 @@ export default function App() {
 
   // Logs list state
   const [logs, setLogs] = useState<RequestLog[]>([]);
+  const [savedEnvironments, setSavedEnvironments] = useState<MockEnvironment[]>([]);
 
   // Trigger loading details from log into tester
   const [testerTrigger, setTesterTrigger] = useState<any | null>(null);
@@ -91,13 +93,13 @@ export default function App() {
     return () => clearInterval(interval);
   }, [selectedEnvId, hasChanges]);
 
-  const flushToFirebase = async (updatedEnvs: MockEnvironment[]) => {
+  const flushToFirebase = async (payload: { upserts: Array<{ environment: MockEnvironment; position: number }>; deletedIds: string[] }) => {
     setIsSaving(true);
     try {
       const res = await fetch('/api/environments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(updatedEnvs)
+        body: JSON.stringify(payload)
       });
 
       if (!res.ok) {
@@ -129,6 +131,7 @@ export default function App() {
         const activeData = Array.isArray(data) ? data : [];
 
         setEnvironments(activeData);
+        setSavedEnvironments(activeData);
         
         const activeId = currentSelectedId !== undefined ? currentSelectedId : selectedEnvId;
         if (activeData.length > 0 && !activeId) {
@@ -166,8 +169,15 @@ export default function App() {
   // Save current state to Firebase only when the user clicks Save.
   const handleSaveChanges = async () => {
     try {
-      await flushToFirebase(environments);
-      await fetchEnvironments(selectedEnvId);
+      const payload = buildEnvironmentSavePayload(environments, savedEnvironments);
+
+      if (payload.upserts.length === 0 && payload.deletedIds.length === 0) {
+        setHasChanges(false);
+        return;
+      }
+
+      await flushToFirebase(payload);
+      setSavedEnvironments(environments);
       setHasChanges(false);
     } catch (err) {
       console.error('Failed to save environments:', err);

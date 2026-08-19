@@ -7,7 +7,8 @@
     "dev": "tsx server.ts",
     "build": "node -r ./scripts/crypto-polyfill.cjs ./node_modules/vite/bin/vite.js build && esbuild server.ts --bundle --platform=node --format=cjs --packages=external --sourcemap --outfile=dist/server.cjs",
     "start": "node dist/server.cjs",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test:persistence": "node -r tsx/cjs -e \"require('./scripts/verify-firestore-persistence.ts')\""
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

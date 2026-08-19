@@ -7,6 +7,8 @@ import { getFirestore as getAdminFirestore } from 'firebase-admin/firestore';
 import { MockEnvironment, RequestLog, HttpMethod } from './src/types';
 import { parseTemplate } from './src/lib/templates';
 import { slugify } from './src/lib/slugify';
+import { loadPersistedEnvironments, saveEnvironmentChangesToFirestore, saveEnvironmentsToFirestore } from './src/lib/firestorePersistence';
+import { mergeEnvironmentSavePayload } from './src/lib/environmentSync';
 
 const app = express();
 const PORT = Number(process.env.PORT ?? 3000);
@@ -26,7 +28,6 @@ function getErrorMessage(err: unknown): string {
 // Initialize Firebase with the Admin SDK only.
 let db: any = null;
 let dbIdInUse: string | null = null;
-const FIRESTORE_WRITE_BATCH_SIZE = 200;
 
 const serviceAccountEnv = process.env.FIREBASE_SERVICE_ACCOUNT_JSON;
 
@@ -115,27 +116,11 @@ async function syncWithFirestore() {
   }
 
   try {
-    const rootDocRef = db.collection('config').doc('mock-environments');
-    const environmentsCollectionRef = rootDocRef.collection('environments');
-    const snapshot = await environmentsCollectionRef.orderBy('position', 'asc').get();
+    const { environments: persistedEnvironments, storageFormat } = await loadPersistedEnvironments(db);
 
-    if (!snapshot.empty) {
-      environments = snapshot.docs.map((doc: any) => {
-        const data = doc.data();
-        const { position, updatedAt, schemaVersion, ...environment } = data;
-        return environment as MockEnvironment;
-      });
-      console.log(`[Firebase Sync] Initialized mock environments from Firestore subcollection. Count: ${environments.length}`);
-      return;
-    }
-
-    const legacySnapshot = await rootDocRef.get();
-    if (legacySnapshot.exists) {
-      const data = legacySnapshot.data();
-      if (data && Array.isArray(data.environments)) {
-        environments = data.environments;
-        console.log(`[Firebase Sync] Initialized mock environments from legacy Firestore document. Count: ${environments.length}`);
-      }
+    if (persistedEnvironments.length > 0) {
+      environments = persistedEnvironments;
+      console.log(`[Firebase Sync] Initialized mock environments from ${storageFormat} Firestore storage. Count: ${environments.length}`);
     }
   } catch (err: any) {
     const errMsg = getErrorMessage(err);
@@ -147,23 +132,6 @@ syncWithFirestore().catch((err) => {
   console.error(err);
 });
 
-async function commitFirestoreOperations(operations: Array<(batch: any) => void>) {
-  if (!db || operations.length === 0) {
-    return;
-  }
-
-  for (let index = 0; index < operations.length; index += FIRESTORE_WRITE_BATCH_SIZE) {
-    const batch = db.batch();
-    const chunk = operations.slice(index, index + FIRESTORE_WRITE_BATCH_SIZE);
-
-    for (const applyOperation of chunk) {
-      applyOperation(batch);
-    }
-
-    await batch.commit();
-  }
-}
-
 // REST API for managing mock environments and configs
 app.get('/api/environments', (req, res) => {
   res.json(environments);
@@ -171,50 +139,28 @@ app.get('/api/environments', (req, res) => {
 
 app.post('/api/environments', async (req, res) => {
   try {
-    environments = req.body;
-
     if (!db) {
       return res.status(503).json({
         error: 'Firebase is not configured on this server. Saving requires Firestore.',
       });
     }
 
-    const payload = {
-      environments: environments,
-      updatedAt: new Date().toISOString()
-    };
+    if (Array.isArray(req.body)) {
+      environments = req.body;
+      await saveEnvironmentsToFirestore(db, environments);
+      console.log(`[Firebase Sync] Saved ${environments.length} environments to Firestore Cloud Database (subcollection storage).`);
+    } else {
+      const upserts = Array.isArray(req.body?.upserts) ? req.body.upserts : [];
+      const deletedIds = Array.isArray(req.body?.deletedIds) ? req.body.deletedIds : [];
 
-    const rootDocRef = db.collection('config').doc('mock-environments');
-    const environmentsCollectionRef = rootDocRef.collection('environments');
-
-    const existingDocRefs = typeof environmentsCollectionRef.listDocuments === 'function'
-      ? await environmentsCollectionRef.listDocuments()
-      : (await environmentsCollectionRef.get()).docs.map((doc: any) => doc.ref);
-
-    const deleteOperations = existingDocRefs.map((docRef: any) => (batch: any) => {
-      batch.delete(docRef);
-    });
-
-    const setOperations = environments.map((environment: MockEnvironment, index: number) => (batch: any) => {
-      batch.set(environmentsCollectionRef.doc(environment.id), {
-        ...environment,
-        position: index,
-        updatedAt: payload.updatedAt,
-        schemaVersion: 2
+      environments = mergeEnvironmentSavePayload(environments, {
+        upserts,
+        deletedIds
       });
-    });
 
-    await commitFirestoreOperations([...deleteOperations, ...setOperations]);
-
-    const rootBatch = db.batch();
-    rootBatch.set(rootDocRef, {
-      schemaVersion: 2,
-      environmentCount: environments.length,
-      updatedAt: payload.updatedAt
-    });
-    await rootBatch.commit();
-
-    console.log(`[Firebase Sync] Saved ${environments.length} environments to Firestore Cloud Database (subcollection storage).`);
+      await saveEnvironmentChangesToFirestore(db, upserts, deletedIds);
+      console.log(`[Firebase Sync] Saved ${upserts.length} changed environment(s) and deleted ${deletedIds.length} environment(s) to Firestore Cloud Database.`);
+    }
 
     res.json({ success: true, message: 'Configuration saved successfully!' });
   } catch (err) {

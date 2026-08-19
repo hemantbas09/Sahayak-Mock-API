@@ -96,7 +96,7 @@ Important behavior:
 
 - The app starts with local in-memory state.
 - Nothing is written to Firestore until you click `Save Changes`.
-- Saves now use a Firestore subcollection layout so large mock configurations do not rely on one giant document.
+- Saves now use a Firestore hierarchy of environment, route, and response documents so large mock configurations do not rely on one giant document.
 - If you delete every mock environment and then save, Firestore is updated to match that empty state.
 - If Firestore is unavailable, the app still runs, but persistence is disabled.
 
