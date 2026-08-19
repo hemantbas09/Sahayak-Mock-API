@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useEffect, useState } from 'react';
 import { 
   Plus, 
   Trash2, 
@@ -28,6 +28,11 @@ export default function ResponseEditor({
   routeMethod
 }: ResponseEditorProps) {
   const [activeSubTab, setActiveSubTab] = useState<'body' | 'headers' | 'rules' | 'validation'>('body');
+  const [bodyDraft, setBodyDraft] = useState(response.body || '');
+
+  useEffect(() => {
+    setBodyDraft(response.body || '');
+  }, [response.id, response.body]);
 
   // Common response headers for autocomplete
   const commonHeaders = [
@@ -133,10 +138,12 @@ export default function ResponseEditor({
 
   const formatJson = () => {
     try {
-      const parsed = JSON.parse(response.body);
+      const parsed = JSON.parse(bodyDraft);
+      const formatted = JSON.stringify(parsed, null, 2);
+      setBodyDraft(formatted);
       onChangeResponse({
         ...response,
-        body: JSON.stringify(parsed, null, 2)
+        body: formatted
       });
     } catch (err: any) {
       if (onShowAlert) {
@@ -266,8 +273,13 @@ export default function ResponseEditor({
             {/* Textarea Body Editor */}
             <div className="flex-1 min-h-0 flex flex-col border border-gray-800 rounded-lg overflow-hidden bg-gray-950">
               <textarea
-                value={response.body}
-                onChange={(e) => onChangeResponse({ ...response, body: e.target.value })}
+                value={bodyDraft}
+                onChange={(e) => setBodyDraft(e.target.value)}
+                onBlur={() => {
+                  if (bodyDraft !== response.body) {
+                    onChangeResponse({ ...response, body: bodyDraft });
+                  }
+                }}
                 placeholder='e.g. { "id": "{{uuid}}", "status": "active" }'
                 className="w-full flex-1 p-3 bg-transparent text-gray-200 font-mono text-xs resize-none outline-none leading-relaxed"
                 spellCheck={false}
