@@ -1,10 +1,7 @@
-import React, { useState, useEffect } from 'react';
-import { 
-  Folder, 
-  Terminal, 
-  Layers, 
-  Settings, 
-  Plus,
+import React, { useState, useEffect, useCallback } from 'react';
+import {
+  Terminal,
+  Layers,
   RefreshCw,
   HelpCircle,
   Code,
@@ -12,14 +9,20 @@ import {
   Save,
   Undo2
 } from 'lucide-react';
-import { MockEnvironment, MockRoute, RouteResponse, RequestLog } from './types';
+import { MockEnvironment, MockRoute, RequestLog } from './types';
 import Sidebar from './components/Sidebar';
 import RouteEditor from './components/RouteEditor';
 import EnvironmentSettings from './components/EnvironmentSettings';
 import LogViewer from './components/LogViewer';
-import { buildEnvironmentSavePayload } from './lib/environmentSync';
+import { buildOps } from './lib/ops';
+import { fetchEnvironments, fetchLogs, clearLogs, saveOps } from './lib/api';
 
 type MainTab = 'mocks' | 'logs';
+
+/** How often the log view auto-refreshes (ms). */
+const LOG_POLL_INTERVAL_MS = 5_000;
+/** How often environment state is re-pulled from the server (multi-tab sync). */
+const ENV_POLL_INTERVAL_MS = 60_000;
 
 export default function App() {
   // Environments list and selection state
@@ -32,10 +35,9 @@ export default function App() {
 
   // Logs list state
   const [logs, setLogs] = useState<RequestLog[]>([]);
-  const [savedEnvironments, setSavedEnvironments] = useState<MockEnvironment[]>([]);
 
-  // Trigger loading details from log into tester
-  const [testerTrigger, setTesterTrigger] = useState<any | null>(null);
+  // Last saved snapshot - the diff base for "Save Changes".
+  const [savedEnvironments, setSavedEnvironments] = useState<MockEnvironment[]>([]);
 
   // Global settings modal state
   const [isGlobalSettingsOpen, setIsGlobalSettingsOpen] = useState(false);
@@ -43,7 +45,7 @@ export default function App() {
   // Tracks if there are unsaved local modifications
   const [hasChanges, setHasChanges] = useState(false);
 
-  // Custom modal dialog states for iframe compatibility
+  // Custom modal dialog states
   const [confirmModal, setConfirmModal] = useState<{
     isOpen: boolean;
     title: string;
@@ -63,128 +65,76 @@ export default function App() {
   // Server state fetching status
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
-  const AUTO_REFRESH_INTERVAL_MS = 2 * 60 * 60 * 1000;
 
   // On Mount: Load configurations and logs from server once
   useEffect(() => {
-    fetchEnvironments();
-    fetchLogs();
+    fetchEnvironments()
+      .then((data) => {
+        setEnvironments(data);
+        setSavedEnvironments(data);
+        if (data.length > 0) {
+          setSelectedEnvId(data[0].id);
+          setSelectedRouteId(data[0].routes[0]?.id || null);
+        }
+      })
+      .catch((err) => console.error('Failed to load environments:', err))
+      .finally(() => setIsLoading(false));
+    fetchLogs().then(setLogs).catch(() => {});
   }, []);
 
-  // Auto-poll logs and environments every 2 hours to avoid excessive background traffic.
+  // Auto-poll logs (live view) and environments (multi-tab sync).
   useEffect(() => {
-    const interval = setInterval(() => {
-      // Prevent fetching environments when the user is actively typing/focusing an input,
-      // or if they have unsaved local modifications. This avoids overwriting changes.
-      const activeEl = document.activeElement;
-      const isTyping = activeEl && (
-        activeEl.tagName === 'INPUT' || 
-        activeEl.tagName === 'TEXTAREA' || 
-        activeEl.classList.contains('cm-content') || // support CodeMirror
-        activeEl.getAttribute('contenteditable') === 'true'
-      );
-      
-      if (!isTyping && !hasChanges) {
-        fetchEnvironments(selectedEnvId);
-      }
-      fetchLogs();
-    }, AUTO_REFRESH_INTERVAL_MS);
+    const logInterval = setInterval(() => {
+      fetchLogs().then(setLogs).catch(() => {});
+    }, LOG_POLL_INTERVAL_MS);
 
-    return () => clearInterval(interval);
-  }, [selectedEnvId, hasChanges]);
+    const envInterval = setInterval(() => {
+      // Never clobber in-progress edits while the user is typing or has unsaved changes.
+      const activeEl = document.activeElement as HTMLElement | null;
+      const isTyping =
+        !!activeEl &&
+        (activeEl.tagName === 'INPUT' ||
+          activeEl.tagName === 'TEXTAREA' ||
+          activeEl.getAttribute('contenteditable') === 'true' ||
+          activeEl.classList.contains('cm-content'));
 
-  const flushToFirebase = async (payload: any) => {
-    setIsSaving(true);
-    try {
-      const res = await fetch('/api/environments', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(payload)
-      });
+      if (isTyping || hasChanges) return;
+      fetchEnvironments()
+        .then((data) => {
+          setEnvironments(data);
+          setSavedEnvironments(data);
+        })
+        .catch(() => {});
+    }, ENV_POLL_INTERVAL_MS);
 
-      if (!res.ok) {
-        const responseText = await res.text().catch(() => '');
-        let serverMessage = responseText || res.statusText;
+    return () => {
+      clearInterval(logInterval);
+      clearInterval(envInterval);
+    };
+  }, [hasChanges]);
 
-        try {
-          const parsed = JSON.parse(responseText);
-          serverMessage = [parsed.error, parsed.details, parsed.hint].filter(Boolean).join(' | ') || serverMessage;
-        } catch {
-          // Keep the raw response text when the server did not send JSON.
-        }
-
-        throw new Error(serverMessage || 'Failed to save environments to server.');
-      }
-    } catch (err) {
-      console.error('Failed to save environments to server:', err);
-      throw err;
-    } finally {
-      setIsSaving(false);
-    }
-  };
-
-  const fetchEnvironments = async (currentSelectedId?: string | null) => {
-    try {
-      const res = await fetch('/api/environments');
-      if (res.ok) {
-        const data = await res.json();
-        const activeData = Array.isArray(data) ? data : [];
-
-        setEnvironments(activeData);
-        setSavedEnvironments(activeData);
-        
-        const activeId = currentSelectedId !== undefined ? currentSelectedId : selectedEnvId;
-        if (activeData.length > 0 && !activeId) {
-          setSelectedEnvId(activeData[0].id);
-          if (activeData[0].routes.length > 0) {
-            setSelectedRouteId(activeData[0].routes[0].id);
-          }
-        }
-      }
-    } catch (err) {
-      console.error('Failed to load environments from server:', err);
-    } finally {
-      setIsLoading(false);
-    }
-  };
-
-  const fetchLogs = async () => {
-    try {
-      const res = await fetch('/api/logs');
-      if (res.ok) {
-        const data = await res.json();
-        setLogs(data);
-      }
-    } catch (err) {
-      console.error('Failed to load logs:', err);
-    }
-  };
-
-  // Update local Environments state and mark as unsaved
-  const saveEnvironments = (updatedEnvs: MockEnvironment[]) => {
+  // Mark local edits as unsaved
+  const saveEnvironments = useCallback((updatedEnvs: MockEnvironment[]) => {
     setEnvironments(updatedEnvs);
     setHasChanges(true);
-  };
+  }, []);
 
-  // Save current state to Firebase only when the user clicks Save.
+  /**
+   * Save current state: diff against the last saved snapshot and send ONLY
+   * the changed entities as operations. No full-config uploads anymore.
+   */
   const handleSaveChanges = async () => {
-    const payload = buildEnvironmentSavePayload(environments, savedEnvironments);
-
-    if (
-      payload.environmentUpserts.length === 0 &&
-      payload.routeUpserts.length === 0 &&
-      payload.responseUpserts.length === 0 &&
-      payload.environmentDeletes.length === 0 &&
-      payload.routeDeletes.length === 0 &&
-      payload.responseDeletes.length === 0
-    ) {
+    const payload = buildOps(savedEnvironments, environments);
+    if (payload.ops.length === 0) {
       setHasChanges(false);
       return;
     }
 
+    setIsSaving(true);
     try {
-      await flushToFirebase(payload);
-      setSavedEnvironments(environments);
+      const applied = await saveOps(payload);
+      console.log(`[Save] ${applied} operation(s) persisted`);
+      setSavedEnvironments(JSON.parse(JSON.stringify(environments)));
       setHasChanges(false);
     } catch (err) {
       console.error('Failed to save environments:', err);
@@ -193,17 +143,19 @@ export default function App() {
         title: 'Save Failed',
         message: err instanceof Error ? err.message : 'The server rejected the save request.'
       });
+    } finally {
+      setIsSaving(false);
     }
   };
 
-  // Revert all local changes by reloading from server
+  // Revert all local changes to the last saved snapshot
   const handleDiscardChanges = () => {
     setConfirmModal({
       isOpen: true,
       title: 'Discard Unsaved Changes',
-      message: 'Are you sure you want to discard all unsaved modifications? This will revert the mock configurations to their last saved state from the server.',
+      message: 'Are you sure you want to discard all unsaved modifications? This will revert the mock configurations to their last saved state.',
       onConfirm: () => {
-        fetchEnvironments();
+        setEnvironments(savedEnvironments);
         setHasChanges(false);
         setConfirmModal(null);
       }
@@ -212,7 +164,7 @@ export default function App() {
 
   const handleClearLogs = async () => {
     try {
-      await fetch('/api/logs', { method: 'DELETE' });
+      await clearLogs();
       setLogs([]);
     } catch (err) {
       console.error('Failed to clear logs:', err);
@@ -239,7 +191,7 @@ export default function App() {
   };
 
   const handleAddEnv = () => {
-    const newId = 'env-' + Math.random().toString(36).substr(2, 9);
+    const newId = 'env-' + Math.random().toString(36).slice(2, 11);
     const newEnv: MockEnvironment = {
       id: newId,
       name: `New Mock Server ${environments.length + 1}`,
@@ -247,8 +199,8 @@ export default function App() {
       port: 3000,
       latency: 0,
       headers: [
-        { id: 'h-' + Math.random().toString(36).substr(2, 5), key: 'Content-Type', value: 'application/json' },
-        { id: 'h-' + Math.random().toString(36).substr(2, 5), key: 'Access-Control-Allow-Origin', value: '*' }
+        { id: 'h-' + Math.random().toString(36).slice(2, 7), key: 'Content-Type', value: 'application/json' },
+        { id: 'h-' + Math.random().toString(36).slice(2, 7), key: 'Access-Control-Allow-Origin', value: '*' }
       ],
       routes: []
     };
@@ -261,7 +213,7 @@ export default function App() {
   const handleDeleteEnv = (id: string) => {
     const targetEnv = environments.find(e => e.id === id);
     const envName = targetEnv ? targetEnv.name : 'this environment';
-    
+
     setConfirmModal({
       isOpen: true,
       title: 'Delete Environment',
@@ -282,7 +234,7 @@ export default function App() {
   };
 
   const handleDuplicateEnv = (env: MockEnvironment) => {
-    const newId = 'env-' + Math.random().toString(36).substr(2, 9);
+    const newId = 'env-' + Math.random().toString(36).slice(2, 11);
     const duplicated: MockEnvironment = {
       ...env,
       id: newId,
@@ -296,9 +248,9 @@ export default function App() {
 
   const handleAddRoute = () => {
     if (!selectedEnvId) return;
-    const newRouteId = 'route-' + Math.random().toString(36).substr(2, 9);
-    const newResponseId = 'resp-' + Math.random().toString(36).substr(2, 9);
-    
+    const newRouteId = 'route-' + Math.random().toString(36).slice(2, 11);
+    const newResponseId = 'resp-' + Math.random().toString(36).slice(2, 11);
+
     const newRoute: MockRoute = {
       id: newRouteId,
       method: 'get',
@@ -311,7 +263,7 @@ export default function App() {
           statusCode: 200,
           label: 'Success Response',
           headers: [],
-          body: JSON.stringify({ message: "Hello! This is your newly created API endpoint." }, null, 2),
+          body: JSON.stringify({ message: 'Hello! This is your newly created API endpoint.' }, null, 2),
           rules: [],
           rulesOperator: 'AND'
         }
@@ -354,17 +306,17 @@ export default function App() {
 
   const handleDuplicateRoute = (route: MockRoute) => {
     if (!selectedEnvId) return;
-    const newRouteId = 'route-' + Math.random().toString(36).substr(2, 9);
-    
+    const newRouteId = 'route-' + Math.random().toString(36).slice(2, 11);
+
     // Deep copy responses with new IDs
     const duplicatedResponses = route.responses.map((resp, idx) => {
-      const respId = 'resp-' + idx + '-' + Math.random().toString(36).substr(2, 5);
+      const respId = 'resp-' + idx + '-' + Math.random().toString(36).slice(2, 7);
       return {
         ...resp,
         id: respId,
         rules: (resp.rules || []).map((rule, ridx) => ({
           ...rule,
-          id: 'rule-' + ridx + '-' + Math.random().toString(36).substr(2, 5)
+          id: 'rule-' + ridx + '-' + Math.random().toString(36).slice(2, 7)
         }))
       };
     });
@@ -406,20 +358,20 @@ export default function App() {
     // Generate fresh server IDs to avoid collisions
     const preppedImports = imported.map(env => ({
       ...env,
-      id: 'env-' + Math.random().toString(36).substr(2, 9)
+      id: 'env-' + Math.random().toString(36).slice(2, 11)
     }));
-    
+
     const updated = [...environments, ...preppedImports];
     saveEnvironments(updated);
-    
+
     // Select the first imported environment
     setSelectedEnvId(preppedImports[0].id);
     setSelectedRouteId(preppedImports[0].routes[0]?.id || null);
-    
+
     setAlertModal({
       isOpen: true,
       title: 'Import Successful',
-      message: `Successfully imported ${preppedImports.length} mock environment(s) into your workspaces!`
+      message: `Successfully imported ${preppedImports.length} mock environment(s). Click "Save Changes" to persist them.`
     });
   };
 
@@ -454,7 +406,7 @@ export default function App() {
 
   return (
     <div className="h-screen w-screen flex flex-col bg-gray-950 text-gray-100 overflow-hidden font-sans">
-      
+
       {/* Top Navigation / App Banner */}
       <div className="bg-gray-950 border-b border-gray-800 px-4 py-3 shrink-0 flex flex-wrap items-center justify-between gap-4 select-none">
         <div className="flex items-center gap-3">
@@ -465,16 +417,16 @@ export default function App() {
           <div>
             <h1 className="text-sm font-extrabold tracking-tight text-white flex items-center gap-1.5">
               <span>API MOCK SERVER</span>
-              <span className="text-[10px] bg-gray-800 border border-gray-700 px-1.5 py-0.5 rounded-full text-gray-400 font-bold tracking-normal leading-none uppercase">v1.0 CLONE</span>
+              <span className="text-[10px] bg-gray-800 border border-gray-700 px-1.5 py-0.5 rounded-full text-gray-400 font-bold tracking-normal leading-none uppercase">v2 OPS</span>
             </h1>
-            <p className="text-[10px] text-gray-500 font-medium">Testing & serving dynamic REST endpoints locally</p>
+            <p className="text-[10px] text-gray-500 font-medium">Testing & serving dynamic REST endpoints - saves only what changed</p>
           </div>
         </div>
 
         {/* Global Nav Tabs */}
         <div className="flex bg-gray-900/60 border border-gray-800 p-1 rounded-lg">
           <button
-            onClick={() => { setActiveTab('mocks'); setTesterTrigger(null); }}
+            onClick={() => setActiveTab('mocks')}
             className={`px-3.5 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer ${
               activeTab === 'mocks' ? 'bg-sky-600 text-white shadow-sm' : 'text-gray-400 hover:text-gray-200'
             }`}
@@ -482,7 +434,7 @@ export default function App() {
             Mocks Designer
           </button>
           <button
-            onClick={() => { setActiveTab('logs'); setTesterTrigger(null); }}
+            onClick={() => setActiveTab('logs')}
             className={`px-3.5 py-1.5 text-xs font-semibold rounded-md transition-colors cursor-pointer flex items-center gap-1.5 ${
               activeTab === 'logs' ? 'bg-sky-600 text-white shadow-sm' : 'text-gray-400 hover:text-gray-200'
             }`}
@@ -503,7 +455,7 @@ export default function App() {
                 <span className="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
                 <span>Unsaved Changes</span>
               </div>
-              
+
               <button
                 onClick={handleDiscardChanges}
                 className="px-2.5 py-1 text-xs font-semibold text-gray-400 hover:text-rose-400 hover:bg-rose-500/10 border border-transparent hover:border-rose-500/20 rounded-md transition-all cursor-pointer flex items-center gap-1"
@@ -554,11 +506,11 @@ export default function App() {
         {isLoading ? (
           <div className="flex-1 flex flex-col items-center justify-center text-gray-500 gap-3">
             <div className="w-8 h-8 border-3 border-sky-500 border-t-transparent rounded-full animate-spin"></div>
-            <p className="text-sm font-semibold">Bootstrapping local environments config...</p>
+            <p className="text-sm font-semibold">Bootstrapping mock configuration...</p>
           </div>
         ) : (
           <>
-            {/* Nav Panels conditional rendering */}
+            {/* Mocks Designer */}
             {activeTab === 'mocks' && (
               <div className="flex-1 flex min-h-0">
                 {/* Left Route sidebar */}
@@ -610,7 +562,7 @@ export default function App() {
               <LogViewer
                 logs={logs}
                 onClearLogs={handleClearLogs}
-                onRefreshLogs={fetchLogs}
+                onRefreshLogs={() => fetchLogs().then(setLogs).catch(() => {})}
               />
             )}
           </>

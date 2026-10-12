@@ -1,8 +1,12 @@
 node_modules/
 build/
 dist/
+dist-test/
 coverage/
+.npm-cache/
 .DS_Store
 *.log
 .env*
 !.env.example
+# Local mock configuration store (file storage backend)
+data/
