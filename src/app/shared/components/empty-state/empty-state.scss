@@ -1,0 +1,23 @@
+@use 'tokens' as *;
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: $space-1;
+  padding: $space-8 $space-4;
+  text-align: center;
+  color: $color-text-muted;
+
+  &__title {
+    margin: 0;
+    font-size: $font-size-lg;
+    color: $color-text;
+  }
+
+  &__hint {
+    margin: 0;
+    font-size: $font-size-sm;
+  }
+}

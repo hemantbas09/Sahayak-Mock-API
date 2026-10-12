@@ -1,0 +1,29 @@
+@use 'tokens' as *;
+
+.spinner {
+  display: inline-flex;
+  flex-direction: column;
+  align-items: center;
+  gap: $space-2;
+  padding: $space-4;
+  color: $color-text-muted;
+
+  &__ring {
+    width: 28px;
+    height: 28px;
+    border: 3px solid $color-border;
+    border-top-color: $color-primary;
+    border-radius: $radius-pill;
+    animation: spinner-rotate 0.8s linear infinite;
+  }
+
+  &__label {
+    font-size: $font-size-sm;
+  }
+}
+
+@keyframes spinner-rotate {
+  to {
+    transform: rotate(360deg);
+  }
+}
