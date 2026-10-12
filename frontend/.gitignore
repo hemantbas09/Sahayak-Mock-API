@@ -1,0 +1,22 @@
+# Compiled output
+/dist
+/out-tsc
+/bazel-out
+
+# Node
+/node_modules
+npm-debug.log
+
+# Angular
+/.angular/cache
+
+# IDEs
+/.idea
+*.iml
+
+# Environment
+.env
+
+# Miscellaneous
+.sass-cache/
+/coverage

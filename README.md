@@ -1,59 +1,76 @@
-# Sahayak
+# Sahayak — Team Mock API Platform
 
-This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 22.2.2.
+A self-hosted mock API platform: configure mock endpoints in a team editor,
+then call them from any client app. See **[DESIGN.md](./DESIGN.md)** for the
+full design, data model, API, and build plan.
 
-## Development server
+## Repository layout
 
-To start a local development server, run:
-
-```bash
-ng serve
+```
+├── frontend/     # Angular 22 editor UI (BEM + SCSS, design tokens)
+├── backend/      # Node.js + Express + MongoDB API & mock engine
+├── DESIGN.md     # The single design document (source of truth)
+└── .npm-cache/   # Workspace-local npm cache (gitignored)
 ```
 
-Once the server is running, open your browser and navigate to `http://localhost:4200/`. The application will automatically reload whenever you modify any of the source files.
+Each app is standalone with its own `package.json` — install and run them
+independently.
 
-## Code scaffolding
+## Development setup
 
-Angular CLI includes powerful code scaffolding tools. To generate a new component, run:
-
-```bash
-ng generate component component-name
-```
-
-For a complete list of available schematics (such as `components`, `directives`, or `pipes`), run:
+### 1. Backend
 
 ```bash
-ng generate --help
+cd backend
+npm install
+cp .env.example .env      # adjust MONGODB_URI if you don't use 127.0.0.1:27017
+npm run dev               # API + mock engine on http://localhost:4000
 ```
 
-## Building
+Without a reachable `MONGODB_URI`, the backend falls back to local file
+storage (`backend/data/mock-config.json`) — fine for trying things out.
 
-To build the project run:
+Useful endpoints:
+
+- `GET /api/status` — health, storage backend, environment count
+- `GET /api/environments` — full editor snapshot
+- `GET /api/logs` — recent mock requests
+- `ANY /mock/<environment>/<path>` — the mocked endpoints themselves
+
+### 2. Frontend
 
 ```bash
-ng build
+cd frontend
+npm install
+npm start                 # http://localhost:4200
 ```
 
-This will compile your project and store the build artifacts in the `dist/` directory. By default, the production build optimizes your application for performance and speed.
+The dev server proxies `/api` and `/mock` to `http://localhost:4000`
+(see `frontend/proxy.conf.json`), so the editor talks to the backend with no
+CORS setup.
 
-## Running unit tests
+### Scripts
 
-To execute unit tests with the [Vitest](https://vitest.dev/) test runner, use the following command:
+| Where    | Script           | What                                        |
+| -------- | ---------------- | ------------------------------------------- |
+| backend  | `npm run dev`    | tsx watch dev server (`:4000`)              |
+| backend  | `npm run build`  | esbuild bundle → `dist/server.cjs`          |
+| backend  | `npm start`      | run the built bundle                        |
+| backend  | `npm test`       | unit (ops, mock engine) + e2e (HTTP API)    |
+| backend  | `npm run lint`   | `tsc --noEmit`                              |
+| frontend | `npm start`      | Angular dev server with proxy (`:4200`)     |
+| frontend | `npm run build`  | production build → `frontend/dist/sahayak`  |
+| frontend | `npm test`       | vitest unit tests                           |
+
+## Production
+
+Build the frontend, then point the backend at it:
 
 ```bash
-ng test
+cd frontend && npm run build
+cd ../backend
+FRONTEND_DIST=../frontend/dist/sahayak/browser npm start
 ```
 
-## Running end-to-end tests
-
-For end-to-end (e2e) testing, run:
-
-```bash
-ng e2e
-```
-
-Angular CLI does not come with an end-to-end testing framework by default. You can choose one that suits your needs.
-
-## Additional Resources
-
-For more information on using the Angular CLI, including detailed command references, visit the [Angular CLI Overview and Command Reference](https://angular.dev/tools/cli) page.
+The backend then serves the built UI from `/` alongside `/api` and `/mock`.
+(DESIGN.md §10 Phase 5 specifies Docker + HTTPS for the deployed setup.)

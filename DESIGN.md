@@ -1,8 +1,10 @@
-# Sahayak — Team Mock API Platform
+# Sahayak — Self-Hosted Mockoon-Compatible Mock API Server
 
 **One document: what the project is, what it does, and exactly how to build it — step by step.**
 
-Stack: **Angular** (frontend, BEM + SCSS) · **Node.js + Express** (backend) · **MongoDB** (storage).
+Stack: **Angular** (frontend, BEM + SCSS) · **Node.js + Express** (backend) · **MongoDB** (storage) · **Handlebars + Faker.js** (templating, same as Mockoon).
+
+**Design goal: behavioral and data-model parity with Mockoon (desktop/CLI v9+).** Every Mockoon feature works the same way here — same route/rule/templating semantics, same JSON export format (a Sahayak environment exports to a file Mockoon can open, and a Mockoon file imports losslessly). The only deliberate deviations are the ones a *server-hosted, team-shared* tool must make, and each is called out explicitly in §14.
 
 This document is the single source of truth. If a decision isn't written here, it isn't decided yet.
 
@@ -10,167 +12,237 @@ This document is the single source of truth. If a decision isn't written here, i
 
 ## 1. What this project is
 
-Sahayak is a **self-hosted, team-shared mock API server**.
+Sahayak is a **self-hosted, team-shared mock API server with full Mockoon parity**.
 
-Think of it as a web app where:
+Think of it as Mockoon's desktop app rebuilt as a web application:
 
-- A team of developers keeps their API mocks (environments → routes → responses) in **one shared place** on a server, not in local files.
-- Anyone with access opens the editor in a browser, edits a mock, and saves it to the server.
-- Other teammates see the change **the next time they open/reload the page** (reload-to-sync; no live websockets in v1).
-- Real client applications (mobile apps, frontends, scripts) call the mock endpoints over HTTP and get fast, realistic, templated responses.
-- The server can **validate incoming request payloads** against a schema and report exactly what failed.
+- A team keeps its Mockoon environments (routes → responses, data buckets, proxy settings) in **one shared place** on a server, not in local JSON files.
+- Anyone with access opens the editor in a browser, edits a mock, and saves it to the server. Changes are live for the mock endpoints immediately.
+- Other teammates see the change the next time they open/reload the editor (reload-to-sync; no live websockets in v1).
+- Real client applications call the mock endpoints over HTTP(S) and get the exact same responses Mockoon would serve: rules, response modes, Handlebars/Faker templating, CRUD routes over data buckets, proxying, latency, file serving, TLS.
+- The UI, concepts, and vocabulary mirror Mockoon 1:1: environments, routes, route responses, rules, data buckets, proxy mode, response modes, templating helpers.
 
 ### Why it exists
 
-Desktop mock tools (Postman mocks, Mockoon desktop, etc.) store data on one machine. A team can't share them, can't see what a teammate changed, and can't point a shared test environment at them. Sahayak moves the whole thing to a server + database so the team works from one source of truth.
+Mockoon desktop stores each environment in a file on one machine. A team can't share it, can't see what a teammate changed, and can't point a shared test environment at it. Sahayak moves the whole thing to a server + database so the team works from one source of truth — **without giving up a single Mockoon feature**.
 
 ### The two audiences
 
 | Audience | What they use |
-|---|---|
-| **Team members** (humans) | The Angular editor UI: create/edit environments, routes, responses, rules, headers, validation; view request logs. |
-| **Client apps** (code) | The mock HTTP endpoints: `GET/POST/... /mock/<environment>/<path>` return the configured response (templated, rule-matched, latency-simulated). |
+| --- | --- |
+| **Team members** (humans) | The Angular editor UI: create/edit environments, routes, responses, rules, data buckets, proxy settings; view request logs. |
+| **Client apps** (code) | The mock HTTP(S) endpoints: one listener per environment, on the environment's configured port, exactly like Mockoon. |
 
-Both audiences hit the **same backend**. The editor uses a small configuration API; client apps use the mock endpoints.
+### Deliberate deviations from Mockoon desktop (read first)
+
+Mockoon desktop is a single-user local app. Hosting it for a team forces exactly four behavior changes; everything else is identical:
+
+1. **Persistence & multi-user**: environments live in MongoDB with optimistic-concurrency version checks instead of being rewritten to a local JSON file (§4.3). Last-write-wins is *not* acceptable on a server, so saves carry a version number and stale saves are rejected with a clear conflict message. Mockoon desktop has no such concept because only one person edits a file.
+2. **No desktop shell**: file responses resolve paths relative to a server-side data directory (`DATA_DIR`), not the user's machine.
+3. **Logs are stored in MongoDB** (capped collection) instead of only in desktop memory, so the whole team can inspect them; sensitive headers are redacted (§2.6).
+4. **The editor is a web app** served by the same server, protected by auth from day one (§2.7) — a server that anyone on the network can edit is not shippable.
+
+Everything else — matching, rules, templating, CRUD semantics, proxy, response modes, export format — follows Mockoon exactly, section by section below.
 
 ---
 
 ## 2. Full feature list
 
-### 2.1 Core mocking engine (the heart of the app)
+Legend: **[M]** = Mockoon behavior copied verbatim · **[S]** = server-specific deviation.
 
-- **Environments** — a named group of routes. Each has:
-  - `name`, a unique `id`, an optional `endpointPrefix` (stripped before matching), a default `port` label, a global `latency` (fallback delay in ms), and a list of default response `headers`.
-- **Routes** — one HTTP method + path pattern. Supports:
-  - Path parameters: `GET /users/:id`
-  - Trailing wildcard (catch-all): `GET /files/*`
-  - Middle wildcard (single segment): `GET /a/*/c`
-  - Universal `*` matches anything.
-  - Case-insensitive matching, trailing-slash tolerant.
-  - Per-route `latency` (overrides the environment default).
-- **Responses** — each route has one or more responses. One is the **selected (default)** response. Others are **conditional** and only served when their **rules** match.
-  - Each response has: `statusCode`, a `label`, `headers` (key/value list), a `body` (string, templated), a `rules` array, a `rulesOperator` (`AND`/`OR`), and an optional **validation schema** with an on/off switch.
-- **Rule matching** — a rule checks one part of the incoming request. Targets: `header`, `query`, `body`, `route_param`. ~25 operators, e.g.:
-  - `equals`, `not_equals`, `contains`, `not_contains`, `regex`
-  - `null`, `not_null`
-  - type checks: `is_string`, `is_number`, `is_boolean`, `is_array`, `is_object` (and their `not_` forms)
-  - `has_property`, `missing_property`, `body_required`, `body_empty`
-  - `is_optional_string`, `is_optional_number`, `is_optional_boolean`
-  - Rules combine with `AND` or `OR`. **An empty rule list never matches** (so a response with no rules is only the default when selected).
-- **Template variables** — response bodies and headers support tags:
-  - `{{query name "default"}}` — value from the query string
-  - `{{body user.name "default"}}` — dot-path into the request body
-  - `{{header x-token "default"}}` — request header (case-insensitive)
-  - `{{param id "default"}}` — captured route parameter
-  - `{{uuid}}` — fresh UUID v4
-  - `{{randomInt 1 100}}` — random integer in range
-  - `{{date iso}}` | `{{date utc}}` | `{{date time}}`
-  - Unknown tags are left untouched. **No arbitrary code execution** — a fixed helper whitelist only.
-- **Latency simulation** — per-environment and per-route delay before the response is sent.
+### 2.1 Environments [M]
 
-### 2.2 Payload validation
+A named group of routes with its own HTTP listener. Fields:
 
-- Each response can carry a **request schema** describing the expected body.
-- Two accepted schema shapes:
-  - A **TypeScript interface** string (parsed line-by-line): `interface Pay { cardId: string; amount: string }`
-  - A **JSON object** where keys are property names and values are type words (`"string"`, `"number"`, `"boolean"`), with `?`-suffixed keys for optional properties.
-- The validator returns `{ valid, errors[] }` where each error names the field, the expected type, and what was received.
-- `GET` requests never validate.
-- When validation fails, the mock responds **400** with a structured error listing each failing field.
-- (v1.5) Per-route modes: **Off / Warn / Strict** — Warn logs the failure but still returns the normal mock; Strict returns 400.
+- `uuid` — environment id (UUID, client-generated).
+- `name`.
+- `port` — **real listening port** (deviation detail in §14.1: desktop binds localhost; the server binds `0.0.0.0`).
+- `endpointPrefix` — stripped before route matching (e.g. `/api/v1`).
+- `latency` — legacy fallback removed; latency is per-response in Mockoon (§2.4). Field omitted.
+- `headers` — default response headers (key/value list).
+- `proxyMode` (bool), `proxyHost` (string), `proxyRemovePrefix` (bool) — environment-level proxy fallback (§2.8).
+- `tlsOptions` — `{enabled, certPath, keyPath, passphrase?}` for HTTPS on this environment's port (§2.9).
+- `routes[]` — ordered; order matters (§2.3).
+- `data[]` — data buckets (§2.10).
+- `version` — integer, incremented on every save; optimistic concurrency (§4.3). **[S]**
 
-### 2.3 Request logs
+### 2.2 Route matching [M]
 
-- Every mock request is logged: timestamp, environment, method, URL, client IP, request headers (sensitive ones redacted), query params, body, response status, response headers, response body, which route matched, and actual latency.
-- **Sensitive header redaction** — `authorization`, `cookie`, `x-api-key`, and any header matching `/token|secret|password|api[-_]?key/i` are stored as `[redacted]`.
-- The editor shows a live-ish log panel (polled, not streamed, in v1).
+- **HTTP routes**: one method + path pattern. Methods: GET, POST, PUT, PATCH, DELETE, HEAD, OPTIONS.
+- **CRUD routes**: special type, no method of its own; expands into multiple operations at runtime (§2.5).
+- Path patterns:
+- Parameters: `/users/:id`.
+- Trailing catch-all: `/files/*`.
+- Middle wildcard (one segment): `/a/*/c`.
+- Case-insensitive, trailing-slash tolerant, URL-decoded params.
+- **Precedence (most to least specific)**: exact path segment > `:param` > `*` wildcard. Declared order breaks ties. A regular HTTP route declared *above* a CRUD route overrides that CRUD operation. **[this paragraph answers the "who wins" question explicitly]**
+- No route matches → 404 (body `{"error":"Route not matched"}`), **unless** proxy fallback is enabled → proxied instead (§2.8).
 
-### 2.4 Save protocol (the important part)
+### 2.3 Responses & response modes [M]
 
-**Editing one response body must send only that response — not the whole file.** This is the core requirement.
+Each route has one or more responses, in order.
 
-- The client keeps a `saved` snapshot and a `current` snapshot in memory.
-- On save, it computes a **list of minimal "ops"** (the diff) and sends only those.
-- The server applies the same **pure reducer** to its in-memory snapshot, then persists **only the touched entities** to MongoDB.
-- Ops are versioned. Current protocol version: `1`.
+- Every response has: `statusCode`, `label`, `headers[]`, `body`/`filePath`/`databucketId` (§2.4), `latency` (ms, per response — this replaces the old per-env/per-route latency), `rules[]`, `rulesOperator` (`OR`|`AND`), `defaultResponse` (bool, exactly one per route).
+- **Selection algorithm** (verbatim Mockoon):
 
-| Op type | Payload | Meaning |
-|---|---|---|
-| `env.upsert` | `env` | Create or update an environment |
-| `env.delete` | `id` | Delete an environment (cascades to its routes/responses) |
-| `env.reorder` | `order[]` | Reorder environments by id |
-| `route.upsert` | `envId`, `route` | Create or update a route |
-| `route.delete` | `envId`, `id` | Delete a route (cascades to responses) |
-| `route.reorder` | `envId`, `order[]` | Reorder routes within an environment |
-| `response.upsert` | `envId`, `routeId`, `response` | Create or update a response |
-| `response.delete` | `envId`, `routeId`, `id` | Delete a response |
-| `response.reorder` | `envId`, `routeId`, `order[]` | Reorder responses within a route |
+1. If route `responseMode` is `SEQUENTIAL`: serve responses in rotation, one per request, ignoring rules.
+2. If route `responseMode` is `RANDOM`: serve a random response, ignoring rules.
+3. Otherwise (rules mode): walk responses **in declaration order**; the **first** response whose rules all match is served. Responses with **zero rules are skipped** (a rule-less response is reachable only as the default).
+4. If no ruled response matched, the response flagged `defaultResponse` is served.
+5. Rules-disabled toggle on a route (Mockoon's "rules off" switch): always serve the default response.
 
-**Rules the protocol must obey (invariants):**
-1. Editing exactly one endpoint's body ⇒ **exactly one `response.upsert`** on the wire.
-2. Reorder ops are only emitted when the *set* of ids is unchanged but the *order* changed. When ids were added/removed, upserts/deletes already cover it — no reorder op.
-3. A reorder op's `order` must list **every existing id exactly once**.
-4. When a child is created, its parent's upsert is in the same batch, so the server never has to invent a missing parent.
-5. Deleting a parent expands into all child paths **before** applying, using the pre-update snapshot (so the backend knows what to delete).
-6. `buildOps` (client diff) and `applyOps` (server reducer) live in **one shared module** so the two sides can never drift.
-7. An unknown parent reference is a **hard error** (rejected), never a silent drop.
+- **Tiebreak**: first matching response in declaration order — never undefined, never random.
 
-The server save is a **synchronous acknowledgement**: it applies the ops, returns `{ success, applied }` immediately. No silent background queue that pretends success.
+### 2.4 Response body types [M]
 
-### 2.5 Team features (v1.5, layered on the same engine)
+Each response has a `bodyType`:
 
-- **Auth + roles** — email/password login; roles `admin`, `editor`, `viewer`. Permission check on every configuration endpoint.
-- **Workspaces** — group environments for teams/projects.
-- **Stale-edit protection** — the client sends the version it loaded; if the server version changed in the meantime, the save is **rejected** with "This was changed by someone else — reload to see the latest," including who changed it and when.
-- **Version history + rollback** — a snapshot is stored on every save; admins can roll back.
-- **Audit log** — who changed what, and when.
-- **Mockoon JSON import/export** — convert existing Mockoon environment files in and out (the engine already understands the format).
+| bodyType | Behavior |
+| --- | --- |
+| `INLINE` | `body` string, templated (§2.11) before sending. Default `Content-Type: application/json`; otherwise taken from response headers. |
+| `FILE` | `filePath` (templating allowed in the path) resolved relative to `DATA_DIR`; streamed with `Content-Type` from the file extension unless overridden by headers. |
+| `DATABUCKET` | Serves the linked bucket's generated content as-is (§2.10). |
+| `NONE` | Empty body. |
 
-> v1 deliberately excludes: live/websocket sync, presence indicators, concurrent-edit merging, multi-company tenancy, billing, mobile-only UI.
+### 2.5 CRUD routes [M]
 
-### 2.6 Non-functional features
+A CRUD route (`type: 'crud'`) is linked to one data bucket (`responses[0].databucketId`) and auto-generates REST endpoints. Semantics copied from Mockoon:
 
-- **CORS done right** — `Access-Control-Allow-Credentials: true` is only sent together with a **concrete** origin (never with `*`). Preflight handled via explicit headers.
-- **Method fallback** — a request with the wrong method returns **405** with `X-Mock-Method-Fallback: true` and an `X-Mock-Warning`, and includes the method-mismatch details in the body.
-- **Size limits** — request bodies capped (e.g. 50mb).
-- **Unknown environment** → 404. **Unknown path** → 404. **Unknown method** → 405.
-- **Health endpoint** — `GET /api/status` returns ok, storage backend name, and environment count.
+| Operation | Array of objects | Array of primitives (`:id` = index) | Object / primitive / non-JSON |
+| --- | --- | --- | --- |
+| `GET /{path}` | whole array (supports filter/sort/pagination) | whole array | content |
+| `GET /{path}/:id` | item by `id` property | item by index | content |
+| `POST /{path}` | insert object (autogenerated `id` if absent) | insert item | overwrite content |
+| `PUT /{path}` | replace whole bucket | replace whole bucket | overwrite content |
+| `PUT /{path}/:id` | full replace by `id` | replace by index | overwrite content |
+| `PATCH /{path}` | concatenate arrays | concatenate | merge if objects |
+| `PATCH /{path}/:id` | partial merge by `id` | replace by index | merge if objects |
+| `DELETE /{path}` | clear bucket | clear bucket | delete content |
+| `DELETE /{path}/:id` | delete by `id` | delete by index | delete content |
+
+- **IDs**: if existing objects have numeric `id`s, new items auto-increment; otherwise UUID v4. If the bucket template generated ids via a helper (e.g. `{{faker 'database.mongodbObjectId'}}`), subsequent inserts reuse that id format.
+- `GET /{path}` query operators: `_page`/`_limit` (pagination), `_sort`/`_order` (sorting), `_eq`/`_ne`/`_gt`/`_gte`/`_lt`/`_lte`/`_like`/`_in`/`_contains`/`_startswith`/`_endswith` on fields (array fields auto-checked for a match on any element).
+- CRUD routes may still have multiple responses and rules; response 1 is fixed (the bucket link), cannot be deleted or reordered, and is the CRUD handler. Extra ruled responses override the default CRUD behavior.
+- **Bucket runtime state lives in memory, survives between requests, and resets to its templated initial content on server restart** — identical to Mockoon. **[S detail: with multiple server replicas, bucket state would need shared storage; v1 is single-replica, see §11]**
+
+### 2.6 Request logs [M+S]
+
+- Every mock request is logged: timestamp, environment, method, URL, client IP, request headers (sensitive redacted), query params, parsed body, response status, response headers, response body, matched route, actual latency.
+- **Redaction** **[S]**: `authorization`, `cookie`, `x-api-key`, and any header matching `/token|secret|password|api[-_]?key/i` stored as `[redacted]`. Response/request **bodies** may also contain secrets — the UI shows bodies but this is documented as an accepted risk; a per-env "disable body logging" toggle is provided.
+- Stored in a **MongoDB capped collection** (e.g. 512 MB) **[S]** — desktop keeps logs in memory only; a shared server must not lose them on restart.
+- Bodies stored in logs are truncated (request 64 KB, response 256 KB). **[S hardening]**
+- Editor log viewer: polled every 5 s (v1), expandable rows, clear button, per-env filter.
+
+### 2.7 Auth & roles [S]
+
+Not a Mockoon desktop feature, but mandatory for a shared server (§1, deviation 4):
+
+- Email/password login; roles `admin`, `editor`, `viewer`.
+- Every `/api/*` (configuration) endpoint checks the role. Mock listeners are public (same as Mockoon's local server).
+- `viewer`: read-only (environments, logs). `editor`: edit environments. `admin`: plus delete environments, manage users, clear logs.
+
+### 2.8 Proxy mode [M]
+
+- **Environment proxy**: `proxyMode: true` + `proxyHost`. When no route matches a request, the server forwards it to `proxyHost` (preserving method, headers, body) and relays the response. `proxyRemovePrefix` strips `endpointPrefix` before forwarding. Response marked with `X-Mockoon-Proxy: true`-style header (use `X-Sahayak-Proxy: true`).
+- **Route-level proxy**: a route can be a pure proxy endpoint (proxying to `proxyHost` or its own host), allowing partial mocking ("proxy everything except these routes").
+- Timeouts (default 10 s) and error mapping (proxy unreachable → 500 with clear body).
+
+### 2.9 HTTPS / TLS [M]
+
+Per environment: `tlsOptions {enabled, certPath, keyPath, passphrase?}`. When enabled, that environment's listener serves HTTPS. Cert paths resolve relative to `DATA_DIR`.
+
+### 2.10 Data buckets & global variables [M]
+
+- **Data buckets**: env-level list `{uuid, name, content}`. `content` is templated **once at generation time** (server start or first reference), parsed as JSON when valid, and held in memory. Referenced by:
+- CRUD routes (linked bucket, mutated by CRUD operations),
+- responses (`bodyType: DATABUCKET`),
+- templating helpers `{{data 'path' 'bucketUuid-or-name'}}` / `{{dataRaw ...}}` (read), `{{setData ...}}` (mutate: set/push/increment/decrement/invert),
+- buckets can reference each other via `dataRaw`.
+- A bucket may hold a **JSON Schema** used together with response rules (the schema-aware rule target).
+- **Global variables**: `{{setVar 'name' value}}` in any templated surface, read via `{{globalVar 'name'}}`, usable in rules (target `global_var`). In-memory, per environment, reset on restart. `{{setVar}}` returns empty string.
+- The editor has a "Data" tab (buckets) and a "Global variables" viewer with manual reset.
+
+### 2.11 Templating (Handlebars + Faker.js, verbatim Mockoon) [M]
+
+Mockoon implements **Handlebars**, **Faker.js**, and custom helpers. We implement the same set. No custom tag parser of our own.
+
+- Syntax: `{{helper 'arg1' arg2}}`, block helpers `{{#helper}}...{{/helper}}`, triple-stash `{{{...}}}` to skip HTML escaping, subexpressions `(helper ...)` for arguments.
+- **Request helpers**: `body 'path.to.prop' 'default'`, `bodyRaw 'path'`, `queryParam 'name' 'default'`, `urlParam 'id'`, `header 'x-token' 'default'`, `cookie 'name'`, `ip`, `method`, `hostname`, `globalVar 'name'`, `data 'path' 'bucket'`, `dataRaw`, `setData`, `requestNumber`.
+- **Data helpers**: `repeat` (block), `oneOf`, `someOf`, `array`, `object`, `filter`, `sortBy`, `reverse`, `stringify`, `parseInt`, `concat`, `split`, `indexOf`, `base64` (inline & block), `newline`, `substr`, `replace`, `replaceAll`, `lowercase`, `uppercase`, `padStart`, `padEnd`, `toFixed`, `round`, `eq`, `gt`, `gte`, `lt`, `lte`, `switch/case/default` (block), `setVar`.
+- **Faker.js helpers**: full `{{faker 'namespace.method' ...options}}` passthrough (pinned Faker version, seed + locale configurable per environment), plus convenience aliases: `uuid`/`guid`, `int`, `float`, `boolean`, `date`, `time`, `dateFormat`, `firstName`, `lastName`, `company`, `email`, `street`, `city`, `country`, `countryCode`, `zipcode`, `lat`, `long`, `phone`, `color`, `hexColor`, `ipv4`, `ipv6`, `lorem`, `title`, `domain`, `tld`, `postcode`.
+- **Handlebars built-ins**: `if`, `unless`, `each`, `with`, `lookup`, `@index`, etc.
+- Templating runs on: response body (INLINE), response header values, FILE paths, data bucket content at generation time, and **rule values**.
+- **Rendering rules (error policy)**: a helper that throws (bad faker path, missing required arg) renders as an empty string and logs a templating warning entry; the response is still served. A body that fails to *parse* as its declared JSON content-type is served anyway (Mockoon behavior — invalid JSON is the user's signal, not ours).
+
+**Template security [S hardening]** — Handlebars is **not a sandbox**. Mitigations, all enforced in `templating.ts`:
+
+1. No custom JS helpers, no `eval`/`Function`, no `registerHelper` at runtime.
+2. The Faker surface is a pinned version; `faker.helpers.fromCharacters` etc. remain pure data generators.
+3. Render with a **fresh Handlebars instance per request** (no shared partial-cache pollution) and strict prototype-pollution guards on `data`/`body` lookups (reject `__proto__`, `constructor`, `prototype` path segments).
+4. Rendering is CPU-bounded: 5 s per render → 500 with a clear error. Never `vm`, never user-registered partials.
+5. Known residual risk is documented in §11 and the dependency is pinned + tracked.
+
+### 2.12 Payload validation → REMOVED
+
+The old spec's "validate body → 400 with field errors" is **not a Mockoon feature** and is removed for parity. Schema-based checking is still available the Mockoon way: put a JSON Schema in a data bucket and use the schema rule target to select responses. (If field-level 400 validation is ever needed, it re-enters as a ruled response returning a 400 INLINE body.)
+
+### 2.13 Import / export [M]
+
+- **Mockoon JSON**: import and export the environment document **byte-for-byte in Mockoon's format** — Sahayak's storage model *is* Mockoon's schema, so this is a pass-through, not a conversion. A file exported from Sahayak opens in Mockoon desktop/CLI and vice versa. On import: ids are kept, `version` starts at 1.
+- **OpenAPI v3 / Swagger**: import (paths → routes, schemas → examples) and export, same fidelity level as Mockoon.
+- Postman collection import: nice-to-have, Phase 2 (Mockoon doesn't do it; it's our addition).
+
+### 2.14 Method fallback → REMOVED
+
+The old spec's 405 + `X-Mock-Method-Fallback` is **not Mockoon behavior**. Mockoon returns 404 when nothing matches (path *or* method), optionally proxying if proxy mode is on. Adopted.
+
+### 2.15 Non-functional [M+S]
+
+- **CORS on mock listeners** [M]: permissive — preflight answered 204 with `Access-Control-Allow-Origin: *`, `Access-Control-Allow-Methods: *`, `Access-Control-Allow-Headers: *`. (This is what makes browser client apps work against Mockoon.)
+- **CORS on `/api/*`** [S]: strict — `Access-Control-Allow-Credentials: true` only with a concrete origin from `APP_URLS` allowlist; never `*`.
+- **Body limits**: 50 MB `json`/`urlencoded`; `multipart` parsed with limits.
+- **Body formats** [M]: JSON, `x-www-form-urlencoded`, `multipart/form-data`, XML (parsed to JSON for `body`/rules when possible); invalid bodies treated as raw strings.
+- **Health**: `GET /api/status` → `{ok, storage, environments, listeners}`.
+- **Latency caps**: per-response latency clamped to [0, 60 000] ms.
 
 ---
 
 ## 3. Technology decisions
 
 | Layer | Choice | Why |
-|---|---|---|
-| Frontend framework | **Angular** | Team requirement; component model fits the nested environment/route/response editor. |
-| Frontend styling | **SCSS + BEM** | Team requirement; BEM keeps a large component tree consistent and debuggable. |
-| Language | **TypeScript** end-to-end | Shared types between client and server; the op-protocol reducer can be shared. |
-| Backend | **Node.js + Express** | Same language as the frontend; mature, simple, enough for this scale. |
-| Database | **MongoDB** | Team requirement; documents map naturally to environment/route/response. |
-| ODM | **Mongoose** | Schemas, indexes, and connection management for MongoDB. |
-| Build (frontend) | **Angular CLI** + **esbuild/vite** where useful | Standard tooling. |
-| Tests | **Jest/Vitest** (unit) + **Supertest** or raw `fetch` (e2e) | Unit-test the pure engine; e2e the HTTP API. |
-| Deployment | **Docker** (one image: server + built Angular static) behind **Nginx/Caddy** with HTTPS | Simple to run internally. |
+| --- | --- | --- |
+| Frontend framework | **Angular** | Team requirement; component model fits the nested editor. |
+| Frontend styling | **SCSS + BEM** | Team requirement. |
+| Language | **TypeScript** end-to-end | Shared types; server and client agree on the Mockoon schema types. |
+| Backend | **Node.js + Express** | Same language as frontend; serves dynamic per-env listeners easily. |
+| Templating | **Handlebars + Faker.js** (pinned) | Mockoon parity — this is the single biggest "same as Mockoon" dependency. |
+| Database | **MongoDB** | One document per environment maps 1:1 to Mockoon's file format. |
+| ODM | **Mongoose** | Schemas, indexes, connection management. |
+| Build (frontend) | **Angular CLI** | Standard tooling. |
+| Tests | **Vitest/Jest** (unit) + **Supertest** (e2e) | Engine must be pure and exhaustively tested. |
+| Deployment | **Docker** (one image: server + built Angular static), HTTPS via Nginx/Caddy for the editor | Simple internal hosting. Mock ports are exposed separately (§14.1). |
 
 ---
 
 ## 4. Architecture
 
-```
-                        ┌──────────────────────────────────────────────┐
-   Browser (Angular)    │              Node.js (Express)               │
-  ┌──────────────────┐  │  ┌────────────────────────────────────────┐  │
-  │  Editor UI        │  │  │  Configuration API  /api/*            │  │
-  │  (BEM + SCSS)     │──┼──┤    environments, logs, status, auth   │  │
-  └──────────────────┘  │  └───────────────┬────────────────────────┘  │
-                        │                  │                            │
-  Client apps ──────────┼──► Mock engine   │  Store (in-memory snapshot)│
-  (mobile/web/scripts)  │  /mock/:env/*    │   applies ops, serves data │
-                        │                  │                            │
-                        │                  ▼                            │
-                        │        Storage backend (MongoStorage)         │
-                        │                  │                            │
-                        └──────────────────┼────────────────────────────┘
+```javascript
+                        ┌────────────────────────────────────────────────────┐
+   Browser (Angular)    │                 Node.js (Express)                  │
+  ┌──────────────────┐  │  ┌──────────────────────────────────────────────┐  │
+  │  Editor UI        │  │  │  Configuration API  /api/*  (auth, roles)   │  │
+  │  (BEM + SCSS)     │──┼──┤    environments CRUD, logs, import/export,  │  │
+  └──────────────────┘  │  │    status                                    │  │
+                        │  └───────────────┬──────────────────────────────┘  │
+                        │                  │                                 │
+  Client apps ──────────┼──► Mock engine    │  Store (in-memory snapshot of   │
+  (mobile/web/scripts)  │  one listener     │   every env: routes, buckets'   │
+                        │  per env + port   │   runtime state, global vars)   │
+                        │                  │                                 │
+                        │                  ▼                                 │
+                        │        Storage: MongoStorage (environments,        │
+                        │        users, capped logs collection)              │
+                        └──────────────────┼─────────────────────────────────┘
                                            ▼
                                      ┌───────────┐
                                      │  MongoDB  │
@@ -178,420 +250,376 @@ The server save is a **synchronous acknowledgement**: it applies the ops, return
 ```
 
 Key properties:
-- **The in-memory snapshot is the source of truth at runtime.** Mock endpoints read from memory (fast, no DB hit per request). The DB is the durable copy, written only for touched entities.
-- **The mock engine is pure.** Matching, rules, templates, and validation are pure functions that take data in and return a result — trivially unit-testable, no I/O.
-- **The op-protocol reducer is shared** between client (diff) and server (apply).
+
+- **The in-memory snapshot is the source of truth at runtime.** Mock listeners read from memory; MongoDB is the durable copy, written on save.
+- **The mock engine is pure**: matching, rules, CRUD operations, templating helpers, proxy decision — pure functions over (request, env-slice, runtime-state) → result. Unit-testable without HTTP.
+- **One document per environment** in MongoDB, schema-identical to Mockoon's export format.
 
 ### 4.1 Backend module map
 
-```
-server/
-  server.ts            # entry: config -> db -> store -> http (wiring only)
-  app.ts               # createApp(store, logs, storageName) -> Express app (testable, no port)
-  config.ts            # loadConfig() reads env; side-effect free
-  state.ts             # Store: holds snapshot, applyOps(), persists touched
-  logs.ts              # LogBuffer (ring buffer, redaction)
-  api.ts               # /api routes + createMockHandler (the mock endpoints)
+The repository is a two-folder monorepo: **`frontend/`** (the Angular app) and
+**`backend/`** (the Node.js + Express + MongoDB app). Each has its own
+`package.json`, `node_modules`, and build tooling, so they install and run
+independently.
+
+```javascript
+backend/
+  src/
+    server.ts          # entry: config -> db -> store -> listeners -> http (wiring only)
+  app.ts               # createApp(store, logs, storageName) -> Express app (no port binding)
+  config.ts            # loadConfig(): PORT, MONGODB_URI, DATA_DIR, APP_URLS, JWT_SECRET, PORT_RANGE
+  state.ts             # Store: env snapshots + bucket/global-var runtime state, version checks
+  logs.ts              # log writer (redaction), LogBuffer cache over capped collection
+  api.ts               # /api routes (auth, environments, logs, status, import/export)
+  listeners.ts         # per-environment HTTP/HTTPS listener lifecycle (open/close/reload on save)
   mock/
-    matcher.ts         # matchPath, findMatchingRoute, findAnyMethodRoute
-    rules.ts           # getNestedValue, evaluateRules
-    templates.ts       # parseTemplate
-    validation.ts      # validateBody (TS interface / JSON schema)
-    responder.ts       # resolveMockResponse (pure) + findEnvironment, stripPrefix, CORS
+    matcher.ts         # matchPath (precedence), findRoute, stripPrefix
+    rules.ts           # evaluateRules: all Mockoon targets & operators, AND/OR, first-match walk
+    templating.ts      # Handlebars engine: request/data/faker helpers, security guards, timeouts
+    crud.ts            # CRUD route operations matrix, id autogen/increment, query operators
+    buckets.ts         # bucket generation (templated), runtime state, setData/setVar mutations
+    proxy.ts           # env & route proxy forwarding
+    responder.ts       # resolveMockResponse (pure): bodyType dispatch, latency, CORS, logs hook
+    files.ts           # FILE body resolution relative to DATA_DIR, streaming, mime
   storage/
-    index.ts           # StorageBackend interface, Touched, parseTouchedPath
-    mongoStorage.ts    # MongoStorage (primary)
-    fileStorage.ts     # FileStorage (optional local fallback, dev convenience)
+    index.ts           # StorageBackend interface
+    mongoStorage.ts    # environments (replaceOne by uuid), users, capped logs
+    fileStorage.ts     # optional dev fallback (JSON file per env)
 db/
-  mongodb.ts           # connectMongo(uri) -> mongoose Connection, maskMongoUri
-  models.ts            # Mongoose schemas + registerModels(conn)
+  mongodb.ts           # connectMongo(uri), maskMongoUri
+  models.ts            # Environment (Mockoon schema + version), User, LogEntry
 lib/
-  ops.ts               # buildOps(), applyOps(), shared types, OPS_PROTOCOL_VERSION
-  types.ts             # MockEnvironment / MockRoute / RouteResponse / RequestLog / ...
+  types.ts             # Mockoon-compatible domain types (Environment, Route, RouteResponse, ...)
+  mockoon-schema.ts    # zod schemas for import validation (Mockoon file format)
 ```
+
+> Note: the map above is the full target. The current `backend/` implements the
+> Phase 0–1 subset (single mock path on the main port, flat 3-collection Mongo
+> model, ops protocol) and will converge to this map as the Mockoon-parity work
+> lands (see §10).
 
 ### 4.2 Frontend module map (Angular)
 
-See **Section 7** for the component-by-component breakdown.
+See **Section 7**.
+
+### 4.3 Save & concurrency model **[S — replaces the old op protocol]**
+
+> ⚠️ **This is the one place we intentionally do *not* copy Mockoon's internals.** Mockoon desktop rewrites the whole environment file on every change because one user owns the file. On a shared server that model loses edits, so:
+
+- The client keeps `saved` and `current` copies; saving sends `PUT /api/environments/:uuid` with `{version, environment}` — the **whole environment document** (typically tens of KB; acceptable for team-scale mocks).
+- Server checks `version` against its snapshot. Mismatch → **409** with `{message: "This environment was changed by <user> at <time>. Reload to see the latest."}`. Match → apply to in-memory snapshot, `version += 1`, persist `replaceOne`, restart/reload that env's listener if `port`/`tlsOptions`/`endpointPrefix` changed, return `{success, version}`.
+- **Synchronous acknowledgement after in-memory apply; persistence completes before the response is sent** (no fire-and-forget). If Mongo write fails → 500, in-memory change is rolled back.
+- The old minimal-op-diff protocol is dropped in v1. It can be reintroduced later as a wire optimization *behind the same API* if whole-document saves ever become a measurable cost. The invariants it enforced (minimal writes, no clobbering) are already guaranteed here by document granularity + version locking.
+- Route/bucket creation, deletion, duplication, and **reordering are all just array mutations inside the environment document** — no separate reorder ops needed.
 
 ---
 
 ## 5. Data model (MongoDB)
 
-Three flat collections. Documents are written with `replaceOne({ upsert: true })` against unique keys, so a save touches **exactly** the entities that changed.
+### `environments` — one document per environment, Mockoon-shaped
 
-### `environments`
-| Field | Type | Notes |
-|---|---|---|
-| `envId` | string | **unique** — the app-generated environment id |
-| `name` | string | |
-| `endpointPrefix` | string | |
-| `port` | number | label only |
-| `latency` | number | default delay ms |
-| `headers` | `{id,key,value}[]` | default response headers |
-| `position` | number | order among environments |
-| `routeCount` | number | denormalized counter |
-| `schemaVersion` | number | current 1 |
-| `updatedAt` | string (ISO) | |
+```javascript
+{
+  uuid: string,            // unique index
+  name: string,
+  port: number,
+  endpointPrefix: string,
+  headers: [{key, value}],
+  proxyMode: boolean,
+  proxyHost: string,
+  proxyRemovePrefix: boolean,
+  tlsOptions: {enabled, certPath, keyPath, passphrase},
+  routes: [Route],         // order = declaration order
+  data: [DataBucket],
+  version: number,         // optimistic concurrency (Sahayak-only field, stripped on export)
+  createdAt, updatedAt: ISO strings
+}
+```
 
-Index: `{ envId: 1 }` unique.
+`Route`:
 
-### `routes`
-| Field | Type | Notes |
-|---|---|---|
-| `envId` | string | |
-| `routeId` | string | |
-| `method` | string | |
-| `endpoint` | string | path pattern |
-| `description` | string | |
-| `latency` | number | |
-| `selectedResponseId` | string | |
-| `responseCount` | number | denormalized |
-| `position` | number | order within env |
-| `schemaVersion` | number | |
-| `updatedAt` | string | |
+```javascript
+{
+  uuid, type: 'http'|'crud', method: 'get'|'post'|...,   // ignored for crud
+  endpoint: string, documentation: string,
+  responseMode: null|'RANDOM'|'SEQUENTIAL',
+  responses: [RouteResponse]
+}
+```
 
-Index: `{ envId: 1, routeId: 1 }` unique.
+`RouteResponse`:
 
-### `responses`
-| Field | Type | Notes |
-|---|---|---|
-| `envId` | string | |
-| `routeId` | string | |
-| `responseId` | string | |
-| `statusCode` | number | |
-| `label` | string | |
-| `headers` | `{id,key,value}[]` | |
-| `body` | string | templated |
-| `rules` | `{id,target,property,operator,value}[]` | |
-| `rulesOperator` | `AND`/`OR` | |
-| `validationInterface` | string? | |
-| `validationEnabled` | boolean? | |
-| `position` | number | order within route |
-| `schemaVersion` | number | |
-| `updatedAt` | string | |
+```javascript
+{
+  uuid, label, statusCode: number,
+  headers: [{key, value}],        // values templated
+  latency: number,                // ms, per response (Mockoon)
+  bodyType: 'INLINE'|'FILE'|'DATABUCKET'|'NONE',
+  body: string, filePath: string, databucketId: string,
+  rules: [RouteRule], rulesOperator: 'OR'|'AND',
+  defaultResponse: boolean
+}
+```
 
-Index: `{ envId: 1, routeId: 1, responseId: 1 }` unique.
+`RouteRule`:
 
-### Why flat, not nested?
+```javascript
+{
+  target: 'body'|'query'|'params'|'headers'|'cookie'|'global_var'|'request_number'|'data_bucket',
+  property: string,        // name/path; for data_bucket: bucket uuid
+  modifier: string,        // secondary path for data_bucket rules
+  operator: string,        // see §2.11 ops list; combined with `invert`
+  invert: boolean,         // Mockoon's "invert" toggle (replaces not_* operators)
+  value: string            // templating allowed
+}
+```
 
-A nested single-document-per-environment model is easier to read but breaks the core requirement: editing one response would rewrite the whole environment document (and contend with concurrent edits). Three flat collections let a `response.upsert` write **one small document**. `loadAll()` re-nests them by querying in `position` order.
+`DataBucket`: `{uuid, name, content}` (templated at generation; runtime copy lives in the Store, not the DB).
 
-### IDs
+### `users`
 
-All ids are **app-generated prefixed strings** (`env-…`, `route-…`, `resp-…`, `h-…`, `rule-…`), created on the client. They are safe to use as the unique keys (they're never ObjectId-shaped).
+`{email (unique), passwordHash, role: 'admin'|'editor'|'viewer', createdAt}`.
+
+### `logs` — **capped collection** (e.g. 512 MB, max ~200k docs)
+
+`{ts, envUuid, method, url, ip, reqHeaders (redacted), query, reqBody (trunc 64KB), resStatus, resHeaders, resBody (trunc 256KB), routeUuid, latencyMs}`.
+
+**Why one document per environment (not the old flat 3-collection model)?** Because the storage shape must be Mockoon's file format for lossless import/export, and because whole-document saves + version locking make concurrent-edit safety trivial to reason about. Flat collections were a good answer to the old op-protocol question; both are retired together.
+
+**IDs**: plain UUIDs (Mockoon convention), client-generated.
 
 ---
 
 ## 6. API design (REST)
 
-### Configuration API (used by the editor)
+### Configuration API (editor; all require auth, role-checked)
 
 | Method | Path | Body | Returns |
-|---|---|---|---|
-| `GET` | `/api/environments` | — | `MockEnvironment[]` (the full nested snapshot) |
-| `POST` | `/api/environments` | `{ version, ops[] }` | `{ success: true, applied: n }` (synchronous) or `400` on malformed ops |
-| `GET` | `/api/logs` | — | `RequestLog[]` (most recent first, capped) |
-| `DELETE` | `/api/logs` | — | `{ success: true }` |
-| `GET` | `/api/status` | — | `{ ok, storage, environments }` |
+| --- | --- | --- | --- |
+| `POST` | `/api/auth/login` | `{email, password}` | `{token, user}` |
+| `GET` | `/api/auth/me` | — | user |
+| `GET` | `/api/users` / `POST` / `DELETE` | — | admin-only user management |
+| `GET` | `/api/environments` | — | env summaries (uuid, name, port, endpointPrefix, routeCount, version) |
+| `GET` | `/api/environments/:uuid` | — | full environment document |
+| `POST` | `/api/environments` | env (uuid optional) | created env `{success, uuid, version}` |
+| `PUT` | `/api/environments/:uuid` | `{version, environment}` | `{success, version}` or **409 conflict** |
+| `DELETE` | `/api/environments/:uuid` | — | `{success}` (admin) |
+| `POST` | `/api/environments/:uuid/duplicate` | — | new env |
+| `POST` | `/api/import` | Mockoon/OpenAPI file | imported env(s) |
+| `GET` | `/api/environments/:uuid/export` | — | Mockoon JSON download |
+| `GET` | `/api/logs?env=&limit=` | — | recent logs |
+| `DELETE` | `/api/logs` | — | clear (admin/editor) |
+| `GET` | `/api/status` | — | `{ok, storage, environments, listeners}` |
 
-(v1.5) Add `/api/auth/*` (login, me), `/api/workspaces`, and version/rollback endpoints. Every config endpoint checks the caller's role.
+### Mock API (client apps) [M]
 
-### Mock API (used by client apps)
-
-| Method | Path | Behavior |
-|---|---|---|
-| `ANY` | `/mock/:envId/*` | Match the environment (by id or slug), strip `endpointPrefix`, find a route + response, run rules/validation/templates/latency, return the mocked response. Logs every call. |
-| `ANY` | `/mock/:envId` | Same, with an empty path segment. |
-
-Mock response semantics:
-- Unknown environment → **404**.
-- No matching path → **404**.
-- Path matches but method differs → **405** + `X-Mock-Method-Fallback: true` + `X-Mock-Warning`, body includes the method-mismatch info.
-- A response with matching rules wins over the selected default.
-- Validation failure (when enabled) → **400** with the structured error list.
-- Requested `Content-Type` honored from the response headers (default JSON).
+- **One listener per environment**, on `env.port`, HTTPS if `tlsOptions.enabled`. Path = `endpointPrefix` + route pattern. This is exactly how Mockoon desktop/CLI behaves — a client app points at `http://server:3001/...`.
+- Unknown path → **404** (or proxy if enabled). Unknown method → **404** (§2.14). Every call logged (§2.6).
+- Convenience path routing (optional, `PATH_ROUTING=true`): also serve `ANY /mock/:uuid/*` on the main port for setups where opening many ports is impractical. Mockoon-parity serving remains the default.
 
 ---
 
 ## 7. Frontend build plan — Angular, component by component (BEM + SCSS)
 
-### 7.1 Conventions (agree on these before writing a single component)
+### 7.1 Conventions
 
-**BEM.** Every component's styles use Block__Element--Modifier.
-- Block = the component name, kebab-case: `.mock-app`, `.env-sidebar`, `.route-editor`.
-- Element = `__`: `.route-editor__header`, `.route-editor__endpoint`.
-- Modifier = `--`: `.route-editor__endpoint--invalid`, `.btn--primary`, `.log-row--error`.
-- One component = one block. Elements/modifiers only live inside that block's file. No styling across blocks.
+**BEM.** Block = component name; `.mock-app`, `.env-sidebar`, `.route-editor`; elements `__`, modifiers `--`. One component = one block; co-located SCSS with nesting; no cross-block styling; snapshot/lint check on class prefixes.
 
-**SCSS structure per component** (co-located, partials):
-```
-src/app/features/environments/
-  route-editor/
-    route-editor.component.ts
-    route-editor.component.html
-    route-editor.component.scss   # .route-editor { ... }
-    route-editor.component.spec.ts
-```
-In the SCSS, use nesting to express BEM:
+**Design tokens** (global SCSS, imported once):
+
 ```scss
-.route-editor {
-  &__header { ... }
-  &__endpoint {
-    &--invalid { ... }
-  }
-  &__actions { ... }
-}
-```
-
-**Design tokens** (global SCSS, imported once in `styles.scss`):
-```scss
-// styles/_tokens.scss
-$color-bg: #0f172a;
-$color-surface: #1e293b;
-$color-text: #e2e8f0;
-$color-primary: #38bdf8;
-$color-danger: #f87171;
-$color-success: #34d399;
-$radius-sm: 4px;
-$radius-md: 8px;
+$color-bg: #0f172a; $color-surface: #1e293b; $color-text: #e2e8f0;
+$color-primary: #38bdf8; $color-danger: #f87171; $color-success: #34d399;
+$radius-sm: 4px; $radius-md: 8px;
 $space-1: 4px; $space-2: 8px; $space-3: 12px; $space-4: 16px; $space-6: 24px;
 $font-mono: 'JetBrains Mono', monospace;
 ```
-Components reference tokens only — never raw hex in a component file.
 
-**State.** One `EnvironmentsStore` (Angular `signal`-based or a lightweight `BehaviorSubject`) holds:
-- `saved: MockEnvironment[]` (last known-good from the server)
-- `current: MockEnvironment[]` (what the UI is editing)
-- `dirty` (derived: `current !== saved`)
-- `saving`, `saveError`
+Components reference tokens only — no raw hex in component files. (Theme matches Mockoon's dark UI for familiarity.)
 
-All mutations go through the store's action methods, which mutate `current`. Saving is: `buildOps(saved, current)` → `POST /api/environments` → on success set `saved = current`.
+**State.** `EnvironmentsStore` (signals): `list`, `current: Environment | null`, `savedVersion`, `dirty`, `saving`, `saveError`, `conflictInfo`. Mutations mutate `current`; save = `PUT {version, environment}`; 409 → surface the conflict message with who/when; success → update `savedVersion`.
 
-**HTTP.** A thin `MockApiClient` service wraps `HttpClient`: `fetchEnvironments`, `saveOps`, `fetchLogs`, `clearLogs`, `status`.
+**HTTP.** `MockApiClient` wraps `HttpClient` with the JWT interceptor.
 
-### 7.2 App shell (top-level layout)
+### 7.2 App shell
 
-```
+```javascript
 app/
-  app.component.ts/html/scss          # .mock-app  — three-column shell
-  app.routes.ts                       # lazy routes
-  app.config.ts                       # provideRouter, provideHttpClient
+  app.component.*                 # .mock-app — shell: header (env switcher) + tabs + save bar
+  app.routes.ts / app.config.ts
   core/
-    environments.store.ts             # the single source of truth
-    mock-api.client.ts                # HttpClient wrapper
-    op-protocol/                      # shared lib/ops ported to Angular (or an npm-internal package)
-      ops.ts
-  shared/                             # dumb, reusable, no business logic
-    components/
-      kv-list/                        # .kv-list — add/remove/edit key-value rows
-      rule-editor/                    # .rule-editor — build a RouteRule row
-      tag-input/                      # .tag-input
-      modal/                          # .modal — confirm + alert dialogs
-      toast/                          # .toast
-      empty-state/                    # .empty-state
-      spinner/                        # .spinner
-    pipes/
-      elapsed-time.pipe.ts
-    utils/
-      id.ts                           # prefixed id generator
-      slugify.ts
+    environments.store.ts
+    mock-api.client.ts
+    auth.store.ts                 # token, user, role guards
+  shared/
+    components/ kv-list, rule-editor, modal, toast, empty-state, spinner, tag-input,
+                  faker-helper-picker, template-hint
+    pipes/ elapsed-time.pipe
+    utils/ uuid.ts, download.ts
 ```
 
-### 7.3 Component-by-component build order
+### 7.3 Component-by-component build order (bottom-up)
 
-Build **bottom-up**: shared leaf components first, then feature panels, then the shell. Each step has a concrete "done" check.
+**F1 — Project + design system.** `ng new sahayak --style=scss --routing`; tokens + base; `spinner`, `empty-state`. *Done:* styled shell on `ng serve`.
 
-**Step F1 — Project + design system**
-- `ng new sahayak --style=scss --routing`, add `@angular/*` dev deps.
-- Create `styles/_tokens.scss`, `styles/_base.scss`, import in `styles.scss`.
-- Build `spinner` and `empty-state` (no logic — pure presentation).
-- *Done:* `ng serve` shows the base page styled with tokens.
+**F2 — Auth screens.** `login`, route guards by role, JWT interceptor, 401 → login redirect. *Done:* unauthenticated users can't reach `/api/*`.
 
-**Step F2 — `kv-list` component**
-- Inputs: `items: KeyValue[]`, `placeholder`; outputs: `itemsChange` (two-way via `@Input` + `@Output`, or `ControlledComponent`).
-- BEM: `.kv-list__row`, `.kv-list__key`, `.kv-list__value`, `.kv-list__remove`.
-- *Done:* can add, edit, remove header rows; used in a scratch component.
+**F3 — `kv-list`** (headers editor). Two-way `itemsChange`. *Done:* add/edit/remove header rows.
 
-**Step F3 — `rule-editor` component**
-- Inputs: `rules: RouteRule[]`, `operator: AND|OR`; outputs on change.
-- Row: target select (header/query/body/route_param), property input, operator select (all 25), value input.
-- BEM: `.rule-editor__row`, `.rule-editor__target`, `.rule-editor__operator`, `.rule-editor__value`, `.rule-editor__logic`.
-- *Done:* build AND/OR rules visually; round-trips to a `RouteRule[]`.
+**F4 — `rule-editor`.** Row: target select (body/query/params/headers/cookie/global_var/request_number/data_bucket), property (+ modifier for data_bucket), **invert toggle**, operator select (full Mockoon operator list), value input (with templating allowed + helper picker button). Logic AND/OR per response. *Done:* round-trips `RouteRule[]`.
 
-**Step F4 — `modal` + `toast`**
-- `modal`: `open`, `title`, `message`, `confirmLabel`, `cancelLabel`; `confirmed`/`cancelled` outputs. BEM `.modal`, `.modal__overlay`, `.modal__dialog`, `.modal__actions`.
-- `toast`: transient success/error, auto-dismiss. BEM `.toast`, `.toast--error`.
-- *Done:* confirm-delete flow works end to end.
+**F5 — `faker-helper-picker` + `template-hint`.** A searchable cheat-sheet panel (grouped: request, data, faker aliases) that inserts helpers at the cursor in any textarea. *Done:* users never need to memorize helper names.
 
-**Step F5 — The store + API client + op protocol**
-- Port the shared `ops.ts` (buildOps/applyOps) and `types.ts` into `app/core`.
-- Implement `EnvironmentsStore` (signals) and `MockApiClient`.
-- *Done:* store can load environments from a running backend and report `dirty`.
+**F6 — Store + API client.** Load env list, load env, save with version, conflict handling, duplicate, delete. *Done:* `dirty` tracking + 409 surfacing works.
 
-**Step F6 — `env-sidebar` (left column)**
-- Lists environments; select one; create/duplicate/delete/reorder (up/down).
-- BEM: `.env-sidebar`, `.env-sidebar__item`, `.env-sidebar__item--active`, `.env-sidebar__actions`.
-- *Done:* selecting an env drives the middle column; create/delete update the store.
+**F7 — `env-sidebar`.** Env list (name, port, lock state), select/create/duplicate/delete, import/export buttons. *Done:* drives everything else.
 
-**Step F7 — `route-list` (middle column)**
-- Lists the selected env's routes: method badge, endpoint, selected-response status, latency.
-- Add/duplicate/delete/reorder routes.
-- BEM: `.route-list`, `.route-list__item`, `.route-list__method--get`, `.route-list__endpoint`.
-- *Done:* manage routes visually.
+**F8 — `route-list`.** Routes in declaration order: method badge / `CRUD` badge, endpoint, default-response status, drag-to-reorder, add HTTP route, add CRUD route, duplicate, delete, "rules disabled" toggle, response-mode select (rules/random/sequential). *Done:* order mutations mark dirty.
 
-**Step F8 — `route-editor` (right column, top)**
-- Edits the selected route: method, endpoint, description, latency, selected response id.
-- Embeds `kv-list` for env default headers (in env settings, not here).
-- BEM: `.route-editor`, `.route-editor__field`, `.route-editor__field--invalid`.
-- *Done:* edit route metadata; `dirty` reflects.
+**F9 — `route-editor`.** Endpoint path, method, documentation; CRUD routes show the linked-bucket selector instead. *Done:* metadata edits mark dirty.
 
-**Step F9 — `response-list` + `response-editor` (right column, bottom)**
-- `response-list`: select among a route's responses, mark selected, add/delete.
-- `response-editor`: status code, label, headers (`kv-list`), **body** (monospace textarea with template hint), rules (`rule-editor` + logic select), validation schema textarea + enable switch.
-- BEM: `.response-editor`, `.response-editor__body`, `.response-editor__validation`, `.response-editor__validation--off`.
-- *Done:* edit one response body → store dirty → save sends **exactly one** `response.upsert` (verify in devtools network).
+**F10 — `response-list` + `response-editor`.**
 
-**Step F10 — `log-viewer` (bottom panel or tab)**
-- Polls `/api/logs` every 5s; table of requests with method, path, status, latency; row expands to full headers/body; invalid requests highlighted; "Clear" button.
-- BEM: `.log-viewer`, `.log-viewer__row`, `.log-viewer__row--error`, `.log-viewer__detail`.
-- *Done:* see live mock requests appear; clear works.
+- `response-list`: responses in order; default flag radio (exactly one); add/duplicate/delete/reorder.
+- `response-editor`: label, status code, latency (ms), headers (`kv-list`), body-type selector (`INLINE` | `FILE` | `DATA` | `NONE`) switching the editor: INLINE → monospace textarea with template hint + helper picker + "preview render" button (calls a `POST /api/preview-template` endpoint); FILE → path input (templated); DATA → bucket select; rules tab (`rule-editor`). *Done:* full Mockoon response editing parity.
+- **Preview endpoint** `[S helper]**: `POST /api/environments/:uuid/preview-template` renders a template against a sample request → catches helper typos without hitting the mock.
 
-**Step F11 — `env-settings` modal + `import-export`**
-- `env-settings`: rename env, endpoint prefix, global latency, default headers.
-- `import-export`: Mockoon/Postman/OpenAPI import (parse → build envs → add via ops), JSON export (download snapshot).
-- BEM: `.env-settings`, `.import-export`, `.import-export__dropzone`.
-- *Done:* import a Mockoon file and see it as a new environment.
+**F11 — Data & globals screens.** `data-bucket-list` + `data-bucket-editor` (name, content textarea with helper picker, JSON parse indicator, "reset runtime state" button); `global-vars-panel` (list current vars, reset). *Done:* buckets usable by CRUD routes and `{{data}}`.
 
-**Step F12 — Save bar + shell wiring**
-- `save-bar`: "Unsaved changes" state, Save (POST ops), Discard (revert to `saved`), status (stale-edit error in v1.5).
-- Wire `app.component` three columns: `env-sidebar` | (`route-list` over `route-editor`+`response-editor`) | `log-viewer`.
-- *Done:* the full editor loop works against a real backend: load → edit → save → reload.
+**F12 — `env-settings` modal.** name, port, endpointPrefix, default headers (`kv-list`), proxy (mode/host/removePrefix), TLS (enabled, cert/key paths), danger zone. Listener restart feedback when port/TLS changes. *Done:* settings apply on save.
 
-**Step F13 — v1.5 team screens**
-- `login`, `workspace-list`, `workspace-members`, `version-history` (rollback), `audit-log`.
-- Reuse `modal`, `toast`, `kv-list` where sensible.
+**F13 — `log-viewer`.** Polled (5 s), per-env filter, method/path/status/latency table, expandable detail (headers redacted view, bodies truncated note), clear button, pause/resume. *Done:* live requests appear.
+
+**F14 — Save bar + shell wiring.** "Unsaved changes" pill, Save (PUT), Discard (reload env), conflict banner (who/when + "reload latest" / "discard mine"). *Done:* the full loop: load → edit → save → hit the mock → see logs.
+
+**F15 — Import/export screens.** Import dialog (Mockoon JSON / OpenAPI file → preview → import); export button (download). *Done:* round-trip with Mockoon desktop verified.
 
 ### 7.4 Frontend testing
 
-- Unit (Jest/Karma or Vitest+Jest-style): each component's render + events; store actions; op protocol (round-trips, single-upsert invariant).
-- Component BEM sanity: a lint rule / snapshot test asserting no element outside the component's block prefix.
-- e2e (Playwright): log in → create env → add route → edit body → save → reload → still there.
+- Unit: components render + events; store actions incl. 409 flow.
+- e2e (Playwright): login → create env → add route → edit body with `{{faker}}` → save → `curl` the mock port → verify templated body → see it in logs → export → open in Mockoon desktop (manual check, scripted where possible).
 
 ---
 
 ## 8. Backend build plan — Node.js + MongoDB, step by step
 
-**Step B1 — Scaffold**
-- `npm init -y`, TypeScript config (`strict`), `tsconfig.json`, ESLint + Prettier.
-- Deps: `express`, `mongoose`, `dotenv`. Dev: `typescript`, `tsx`, `@types/*`, `jest`/`vitest`, `supertest`.
-- `server/server.ts` reads config, connects Mongo, builds store + app, listens.
-- `server/config.ts` — pure `loadConfig()` from env: `PORT`, `HOST`, `MONGODB_URI`, `DATA_FILE` (optional file fallback), `APP_URL`.
-- `.env.example` committed; `.env` gitignored.
-- *Done:* `npm run dev` starts, logs the Mongo connection, serves a hello route.
+**B1 — Scaffold.** TS strict, ESLint/Prettier; deps `express mongoose handlebars @faker-js/faker dotenv jsonwebtoken bcryptjs`; dev `tsx vitest supertest @types/*`. `config.ts` pure env loading; `server.ts` wiring. *Done:* `npm run dev` connects Mongo, hello route.
 
-**Step B2 — DB layer**
-- `db/mongodb.ts`: `connectMongo(uri)` returns a standalone `mongoose.Connection`; `maskMongoUri` for logs.
-- `db/models.ts`: the three schemas (Section 5) + `registerModels(conn)` (safe to call twice).
-- *Done:* scripts can create/read a test doc in a throwaway DB.
+**B2 — DB layer.** `connectMongo`, `registerModels`: Environment (+ unique uuid, `version`), User, capped logs. *Done:* round-trip a doc in a throwaway DB.
 
-**Step B3 — The pure mock engine** (no I/O, fully unit-tested before wiring)
-- `mock/matcher.ts` — `matchPath`, `findMatchingRoute`, `findAnyMethodRoute`.
-- `mock/rules.ts` — `getNestedValue`, `evaluateRules` (all operators, AND/OR, empty-never-matches).
-- `mock/templates.ts` — `parseTemplate` (all tags, unknown untouched).
-- `mock/validation.ts` — `validateBody` (TS interface + JSON shapes, `?` optional).
-- `mock/responder.ts` — `resolveMockResponse` (pure; returns `response | not_found | method_mismatch | validation_failed`), plus `findEnvironment`, `stripPrefix`, CORS/preflight helpers.
-- *Done:* **every engine function has passing unit tests** (matcher, rules, validation, templates, responder). This is the highest-value test surface.
+**B3 — Pure mock engine (no I/O, fully unit-tested before wiring).**
 
-**Step B4 — Storage backends**
-- `storage/index.ts`: `StorageBackend` interface, `Touched`, `parseTouchedPath`.
-- `storage/mongoStorage.ts`: `loadAll()` (query all three collections in `position` order, re-nest), `save(snapshot, touched)` (delete touched paths, `replaceOne upsert` touched writes).
-- `storage/fileStorage.ts`: local JSON fallback (dev convenience / no-Mongo mode).
-- *Done:* `MongoStorage` round-trips a snapshot; a save touches only the listed entities (assert doc count changes).
+- `matcher.ts` — segments, precedence (exact > `:param` > `*`), declared-order tiebreak, prefix stripping, decoding.
+- `rules.ts` — all targets (body/query/params/headers/cookie/global_var/request_number/data_bucket), full operator set with `invert`, AND/OR, empty-rules-never-match, first-match walk, templated rule values.
+- `templating.ts` — Handlebars instance factory, all request/data/faker helpers + aliases, `repeat`/`switch` block helpers, escaping rules, prototype-pollution guards, 5 s render budget, error → empty-string policy. **This is the largest engine module; port Mockoon's helper semantics from its docs/tests, don't improvise.**
+- `crud.ts` — the §2.5 operation matrix over bucket runtime state, id autogen (uuid vs auto-increment vs template-detected), filter/sort/pagination operators.
+- `buckets.ts` — generation (template → parse → cache), `setData` mutations, global vars (`setVar`/`globalVar`), reset.
+- `responder.ts` — response selection algorithm (§2.3), bodyType dispatch, latency, CORS headers.
+- `proxy.ts` — env/route forwarding with prefix handling, timeout, error mapping.
+- *Done:* **every engine function green in unit tests** — matcher, rules, templating, CRUD matrix, buckets, responder. Highest-value test surface in the project.
 
-**Step B5 — Shared op protocol**
-- `lib/ops.ts`: `buildOps(saved, current)`, `applyOps(state, ops)`, `OPS_PROTOCOL_VERSION`, `stableStringify`, meta helpers.
-- `lib/types.ts`: all domain types.
-- *Done:* op unit tests — single-body-edit ⇒ exactly one `response.upsert`; round-trips; deletes cascade; reorder invariants; unknown-parent throws.
+**B4 — Storage.** `StorageBackend` interface; `MongoStorage` (loadAll, get, save with version check + `replaceOne`, delete, duplicate, capped-log writer/reader/clear); `FileStorage` dev fallback (one JSON file per env in `DATA_DIR`, still Mockoon format). *Done:* round-trip + version-conflict tests pass.
 
-**Step B6 — `Store` + `logs`**
-- `state.ts`: `Store.applyOps` — expand deletes on pre-snapshot → `applyOps` in memory → extract touched → **queued** persist (fire-and-forget, logged on error).
-- `logs.ts`: `LogBuffer` (capped ring, ~200), `buildEntry`, redaction list + regex.
-- *Done:* applying a batch updates the snapshot and the DB; logs accumulate and redact.
+**B5 — Store.** In-memory snapshot: envs, per-env bucket runtime state, global vars, per-env listener configs. `saveEnvironment(uuid, version, doc)` → check version → apply → persist (awaited) → bump version → notify listeners. Rollback on persist failure. *Done:* concurrent-save test: two writers, second gets 409, state intact.
 
-**Step B7 — HTTP layer**
-- `api.ts`: `createApiRouter(store, logs)` (GET/POST `/api/environments`, GET/DELETE `/api/logs`) + `createMockHandler(store, logs)` (404/204/405 semantics, logs every request).
-- `app.ts`: `createApp(store, logs, storageName)` → Express app with JSON body limits, `/api`, `/api/status`, `/mock/:envId/*`. **No port binding here** so it's testable.
-- *Done:* `supertest`/`fetch` e2e — create env via ops, hit mock endpoint, verify templated body, 404/405/validation paths, log redaction, restart persistence.
+**B6 — Listeners.** `listeners.ts`: open/close/reload an HTTP(S) server per env on port/TLS/endpointPrefix changes; shared request pipeline (parse body by content-type → match → rules → CRUD/proxy/response → templating → latency → send → log). Port-conflict handling (409-style error surfaced in UI on save). *Done:* two envs on two ports serve independently.
 
-**Step B8 — Production build**
-- Frontend: `ng build` → copy to a static dir.
-- Backend: bundle `server.ts` (esbuild, `--packages=external`, CJS) or `tsc`.
-- One Dockerfile: Node base → install → build frontend + backend → `CMD node dist/server.cjs`. `.dockerignore`.
-- Nginx/Caddy reverse proxy with HTTPS.
-- *Done:* `docker compose up` serves the editor + mock endpoints over HTTPS.
+**B7 — HTTP config API + auth.** `/api/auth/*`, `/api/environments*` (§6), `/api/logs`, `/api/status`, `/api/import`, `/api/export`, `/api/preview-template`. Role middleware. Body limits, strict CORS for `/api`. *Done:* supertest e2e of every endpoint incl. roles and 409s.
+
+**B8 — e2e mock tests.** create env via API → hit its port: templated INLINE body, FILE response, DATABUCKET response, ruled response selection (order + AND/OR + invert), random/sequential modes, CRUD full matrix, proxy fallback, 404s, CORS preflight, latency, log redaction, restart persistence (envs persist, bucket state resets — Mockoon behavior). *Done:* green suite.
+
+**B9 — Production build.** `ng build` → static dir served by Express; backend bundled with esbuild (`--packages=external`); one Dockerfile; `.dockerignore`; Nginx/Caddy in front for the editor HTTPS; mock ports published separately (§14.1); compose file. *Done:* `docker compose up` → editor + mocks.
 
 ---
 
-## 9. Test strategy (whole project)
+## 9. Test strategy
 
 | Layer | Tool | What |
-|---|---|---|
-| Pure engine | unit | matcher, rules, validation, templates, responder — **the core**. Exhaustive on edge cases (wildcards, decoded params, empty rules, unions, optional keys, unknown tags). |
-| Op protocol | unit | build/apply round-trips, single-upsert invariant, cascade deletes, reorder invariants, unknown-parent error. |
-| Storage | integration | Mongo round-trip; "save touches only listed entities"; file fallback parity. |
-| HTTP API | e2e (supertest/fetch) | full save flow over real HTTP, mock serving, 404/405/validation, log redaction, restart persistence, status endpoint. |
-| Frontend components | unit + snapshot | rendering, events, BEM class discipline. |
-| Full app | e2e (Playwright) | login → build a mock → save → reload → verify. |
+| --- | --- | --- |
+| Engine | unit | matcher precedence & ties; every rule operator × invert × target; templating helpers (escaping, defaults, subexpressions, repeat/switch); CRUD matrix incl. id strategies & query operators; response-mode algorithm; bucket mutation helpers. |
+| Storage | integration | round-trip; version conflicts; capped logs. |
+| HTTP API | e2e | auth/roles, env CRUD, 409 flow, import/export. |
+| Mock serving | e2e (real ports) | §8 B8 checklist. |
+| Parity | golden files | canned Mockoon export files import → serve → byte-compare responses against Mockoon CLI outputs for the same requests. |
+| Frontend | unit + Playwright | §7.4. |
 
-**Rule:** the engine and op protocol are tested *before* they're wired into HTTP. If a test fails, it fails in isolation, where the fix is obvious.
+**Rule:** engine and templating are fully unit-tested *before* HTTP wiring.
 
 ---
 
-## 10. Phased delivery (what to build, in order)
+## 10. Phased delivery
 
 | Phase | Scope | Exit criteria |
-|---|---|---|
-| **0. Foundation** | Backend scaffold + DB + pure engine + op protocol, all unit-tested. Frontend scaffold + design tokens + shared leaf components. | Engine + ops green in CI. `ng serve` shows styled shell. |
-| **1. Core loop** | Mongo storage, Store, HTTP API, full Angular editor (F6–F12). | Create a mock in the UI, save (single op for a body edit), call it from Postman, see it in logs. |
-| **2. Polish** | Import/export (Mockoon/Postman/OpenAPI), env settings, log detail, discard/confirm flows. | Import an existing Mockoon file and serve it. |
-| **3. Harden** | Input validation, rate limiting, safe templates (whitelist already), timeouts/size limits, health checks, app logs. | Soak: one broken env can't take down others. |
-| **4. Team (v1.5)** | Auth + roles, workspaces, stale-edit protection, version history + rollback, audit log. | Two users editing → second save rejected with a clear "reload" message; rollback restores. |
-| **5. Deploy** | Docker + HTTPS + CI/CD + docs (setup/admin/user). | Deployed internally; a teammate imports mocks and uses it on a real project. |
+| --- | --- | --- |
+| **0. Foundation** | Scaffold, DB, pure engine (matcher, rules, templating, CRUD, buckets), auth. | Engine + templating green in CI. |
+| **1. Core loop** | Storage, Store, listeners, HTTP APIs, editor F1–F14. | Build a mock in the UI, save, `curl` it, see rules/templating/latency work, view logs. |
+| **2. Parity completeness** | CRUD UI, data buckets UI, global vars, proxy mode, file responses, TLS, response modes, import/export (Mockoon + OpenAPI), preview-template. | A real Mockoon environment file imports and behaves identically; export reopens in Mockoon desktop. |
+| **3. Harden** | Rate limiting on `/api`, body/log caps, template security audit, listener timeout soak, docs. | Broken env/port conflict can't take down others. |
+| **4. Deploy** | Docker, HTTPS, CI/CD, admin/user docs. | `docker compose up`; teammate imports mocks and uses them. |
+
+**Explicitly out of scope (v1+):** live collaborative editing/presence, WebSocket mocking (Mockoon v9 feature), callbacks/webhooks (Mockoon Enterprise feature), Mockoon Cloud-style quotas, multi-replica bucket state sharing, OpenAPI *export* fidelity beyond Mockoon's own level.
 
 ---
 
 ## 11. Risks and mitigations
 
 | Risk | Mitigation |
-|---|---|
-| Concurrent edits clobber each other | Stale-edit protection (version check on save) + version history/rollback. In-memory snapshot keeps runtime consistent. |
-| Templates become an execution hole | Fixed helper whitelist, no `eval`, parse errors leave the tag untouched. |
-| One bad env slows the server | Per-request timeouts, body size limits, latency caps; engine is pure and fast. |
-| MongoDB writes interleave | Serialize persistence in `Store` (queue); unique indexes make upserts idempotent. |
-| Scope creep toward "live sync" | Explicitly out of scope for v1 (Section 2.5). Reload-to-sync is the contract. |
-| BEM discipline decays as components grow | Snapshot/lint checks on class prefixes; co-located SCSS per block. |
-| Solo maintainer bus-factor | This document + tests + clear module boundaries; onboard a second dev in Phase 0. |
+| --- | --- |
+| Handlebars is not a sandbox (biggest new attack surface vs. old spec) | §2.11 guards: no runtime helpers/eval, fresh instance per render, prototype-pollution path filtering, render timeout, pinned deps, security-audit step in Phase 3. |
+| Concurrent editors clobber each other | Whole-doc saves + version locking + 409 conflict UX (§4.3). |
+| Per-env port model vs. corporate firewalls | `PATH_ROUTING=true` fallback (§6); document both. |
+| Bucket/global-var state is in-memory → lost on restart / single replica | Accepted Mockoon behavior (state resets on restart); documented. Multi-replica would need Redis — out of scope. |
+| Port conflicts between envs or with host services | Save-time validation + listener error surfaced in UI; suggest port in create flow. |
+| Whole-env save payload grows | Tens of KB typical; reintroduce op-diffing later behind same API if ever needed. |
+| Log bodies contain secrets | Header redaction always; body logging toggle per env; truncation caps. |
+| Mockoon schema evolves | `mockoon-schema.ts` versioned; parity tests pin behaviors, not bytes. |
 
 ---
 
 ## 12. Open decisions (answer before Phase 1)
 
-1. **Hosting** — where does this run? (company server / cloud / Docker on a VM)
-2. **Team size** — how many concurrent editors? (drives whether we need the v1.5 team features early)
-3. **Auth** — is email/password enough for v1, or must SSO be there from day one?
-4. **Save model** — apply on every save (v1 default) vs. a later Publish button (drafts)?
-5. **Existing mocks** — do we have Mockoon files to import first (validates the import path early)?
+1. **Hosting topology** — single VM + Docker? Kubernetes? (Decides whether per-env ports are practical or `PATH_ROUTING` becomes primary.)
+2. **Port strategy** — real per-env ports (Mockoon-exact) vs. path routing (`/mock/:uuid/*`) as the primary client-facing mode? (§14.1 discusses the trade-off; default: real ports.)
+3. **TLS strategy** — per-env certs (Mockoon-style, cert files in `DATA_DIR`) vs. one wildcard cert at the reverse proxy for path routing?
+4. **Auth** — email/password (spec'd) vs. company SSO/OIDC from day one? If OIDC is required, Phase 0 must know.
+5. **Existing mocks** — do we have Mockoon files to import on day one? (Validates the parity claim immediately.)
 
 ---
 
-## 13. Definition of done (v1)
+## 13. Definition of done
 
 - [ ] A teammate opens the editor in a browser, logs in, and creates an environment → route → response.
-- [ ] Saving edits to **one response body sends exactly one `response.upsert`** (verified in the network tab).
-- [ ] A client app calls the mock endpoint and gets the templated, rule-matched, latency-simulated response.
-- [ ] Invalid payload returns 400 with a per-field error list.
-- [ ] Request logs appear (sensitive headers redacted) and can be cleared.
-- [ ] Restarting the server reloads all configuration from MongoDB.
-- [ ] The engine and op protocol have passing unit tests; the HTTP API has passing e2e tests.
-- [ ] Deploys with `docker compose up` behind HTTPS.
+- [ ] A client app calling the env's port gets a templated (`{{faker}}`, `{{queryParam}}`, …), rule-matched, latency-simulated response — indistinguishable from Mockoon.
+- [ ] CRUD route over a data bucket: full create/read/update/delete/filter/pagination cycle works.
+- [ ] Proxy mode forwards unmatched routes to a real API.
+- [ ] Random and sequential response modes behave per Mockoon.
+- [ ] Mockoon JSON export from Sahayak opens unchanged in Mockoon desktop, and vice versa (verified manually + golden-file tests).
+- [ ] Two editors: second save gets a clear 409 "changed by X at Y — reload" message.
+- [ ] Request logs appear (sensitive headers redacted), survive restart, and can be cleared/filtered.
+- [ ] Restarting the server reloads all environments from MongoDB; bucket state resets (Mockoon semantics).
+- [ ] Engine + templating unit tests green; HTTP + mock e2e green.
+- [ ] `docker compose up` behind HTTPS serves editor + mock endpoints.
+
+---
+
+## 14. Mockoon parity reference & deviation log
+
+| # | Topic | Mockoon behavior | Sahayak decision |
+| --- | --- | --- | --- |
+| 1 | Serving | One server per env on `env.port` | **Same** — listeners per env; path routing available as opt-in fallback for restricted networks. |
+| 2 | Templating | Handlebars + Faker.js + custom helpers | **Same** (§2.11), plus render hardening. |
+| 3 | Rules | Targets incl. cookie/global var/data bucket/request number; invert toggle; AND/OR per response; first match in order | **Same** (§2.3). |
+| 4 | CRUD routes | Operation matrix, id strategies, query operators | **Same** (§2.5). |
+| 5 | Data buckets / global vars | Templated at generation; in-memory runtime state; reset on restart | **Same** (§2.10). |
+| 6 | Proxy | Env proxy fallback + route-level proxy | **Same** (§2.8). |
+| 7 | Response modes | Rules (default) / RANDOM / SEQUENTIAL, per route | **Same** (§2.3). |
+| 8 | Response body | INLINE / FILE / DATABUCKET / NONE; latency per response | **Same** (§2.4). |
+| 9 | No-match behavior | 404 (+ proxy if enabled) | **Same**; old spec's 405 method-fallback **removed** (§2.14). |
+| 10 | Request validation → 400 | Does not exist | **Removed** (§2.12); schema-in-bucket + rules is the Mockoon way. |
+| 11 | Persistence | Whole environment JSON file, last-write-wins | **Whole environment document + version lock + 409** (§4.3). |
+| 12 | Logs | In-memory desktop logs | **MongoDB capped collection**, redaction, truncation (§2.6). |
+| 13 | Multi-user / auth | None (desktop) / Cloud accounts | **Email/password + roles from v1** (§2.7). |
+| 14 | FILE responses | Path on user's machine | **Relative to server `DATA_DIR`** (§1, deviation 2). |
+| 15 | Import/export | Mockoon JSON, OpenAPI/Swagger | **Same formats**, byte-compatible (§2.13). |
+| 16 | WebSocket mocking (v9) | Supported | **Out of scope.** |
+| 17 | Callbacks | Enterprise feature | **Out of scope.** |
