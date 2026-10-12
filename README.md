@@ -53,10 +53,10 @@ CORS setup.
 
 | Where    | Script           | What                                        |
 | -------- | ---------------- | ------------------------------------------- |
-| backend  | `npm run dev`    | tsx watch dev server (`:4000`)              |
+| backend  | `npm run dev`    | tsx dev server (`:4000` + one port per env) |
 | backend  | `npm run build`  | esbuild bundle → `dist/server.cjs`          |
 | backend  | `npm start`      | run the built bundle                        |
-| backend  | `npm test`       | unit (ops, mock engine) + e2e (HTTP API)    |
+| backend  | `npm test`       | vitest: engine units + HTTP/mock e2e        |
 | backend  | `npm run lint`   | `tsc --noEmit`                              |
 | frontend | `npm start`      | Angular dev server with proxy (`:4200`)     |
 | frontend | `npm run build`  | production build → `frontend/dist/sahayak`  |

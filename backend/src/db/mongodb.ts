@@ -1,7 +1,7 @@
 /**
  * MongoDB connection management.
  *
- * The server connects a standalone mongoose `Connection` (not the default
+ * The server connects a standalone mongoose Connection (not the default
  * global one) so tests can open connections to different databases without
  * interfering with each other.
  */
@@ -13,10 +13,6 @@ export interface MongoConnectOptions {
   maxPoolSize?: number;
 }
 
-/**
- * Open a connection to MongoDB. Throws on failure - the caller decides
- * whether to fall back to local file storage.
- */
 export async function connectMongo(
   uri: string,
   options: MongoConnectOptions = {}
@@ -29,7 +25,7 @@ export async function connectMongo(
   return conn;
 }
 
-/** Strip credentials from a URI so it is safe to log. */
+/** Remove credentials for safe logging: mongodb://user:pass@host → mongodb://***@host. */
 export function maskMongoUri(uri: string): string {
-  return uri.replace(/\/\/([^/@]+)@/, '//***@');
+  return uri.replace(/\/\/([^@/]+)@/, '//***@');
 }
