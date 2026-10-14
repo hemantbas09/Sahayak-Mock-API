@@ -243,7 +243,7 @@ describe('config API', () => {
       .set('Authorization', `Bearer ${adminToken}`);
     // Find the duplicated uuid via the list.
     const list = await request(app).get('/api/environments').set('Authorization', `Bearer ${adminToken}`);
-    const copy = list.body.find((e: { name: string }) => e.name === 'Test Env (copy)');
+    const copy = list.body.find((e: { name: string }) => e.name.includes('(copy)'));
     const del = await request(app)
       .delete(`/api/environments/${copy.uuid}`)
       .set('Authorization', `Bearer ${adminToken}`);

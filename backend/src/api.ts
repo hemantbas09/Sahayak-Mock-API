@@ -171,9 +171,14 @@ export function createApiRouter(deps: ApiDeps): Router {
       }
       const created: { uuid: string; name: string; portConflict: boolean }[] = [];
       for (const env of envs) {
-        const conflict = await portTaken(store, env.uuid, env.port);
-        const result = await store.createEnvironment(env);
-        if (result.ok) created.push({ uuid: env.uuid, name: env.name, portConflict: conflict });
+        const targetUuid = store.get(env.uuid) ? randomUUID() : env.uuid;
+        const envToCreate: Environment = {
+          ...env,
+          uuid: targetUuid,
+        };
+        const conflict = await portTaken(store, envToCreate.uuid, envToCreate.port);
+        const result = await store.createEnvironment(envToCreate);
+        if (result.ok) created.push({ uuid: envToCreate.uuid, name: envToCreate.name, portConflict: conflict });
       }
       res.status(201).json({ success: true, imported: created });
     } catch (err) {

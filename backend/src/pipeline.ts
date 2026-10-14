@@ -21,6 +21,7 @@ import { findRoute, stripPrefix } from './mock/matcher';
 import { resolveMockResponse, notFoundResponse } from './mock/responder';
 import { buildProxyTarget, forwardProxy, toEngineResponse } from './mock/proxy';
 import { render, createRenderContext } from './mock/templating';
+import { evaluateRules, RuleContext } from './mock/rules';
 import { handleCrud } from './mock/crud';
 import { fileResolver } from './mock/files';
 import { LogService } from './logs';
@@ -175,15 +176,22 @@ export async function handleMockRequest(
     cookies,
     params,
     dataDir: deps.dataDir,
+    req,
   });
+  const ruleCtx: RuleContext = {
+    req,
+    cookies,
+    params,
+    runtime,
+    requestNumber,
+    renderValue: (val: string) => render(val, renderCtx).output,
+  };
   const response = resolveMockResponse(env, match, req, runtime, {
     renderTemplate: (template: string) => render(template, renderCtx),
     resolveFile: fileResolver(deps.dataDir),
-    evaluateRules: undefined,
+    evaluateRules: (rules, op) => evaluateRules(rules, op, ruleCtx),
     rng: Math.random,
   });
-  // The responder's rule context needs requestNumber — resolveMockResponse
-  // builds it from req.requestNumber (already set above).
   await logResult(env.uuid, raw, req, response, Date.now() - startedAt, deps.logs);
   return response;
 }

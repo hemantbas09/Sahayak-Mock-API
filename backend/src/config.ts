@@ -33,7 +33,7 @@ export interface ServerConfig {
 
 export function loadConfig(): ServerConfig {
   const dataDir = process.env.DATA_DIR?.trim() || path.join(process.cwd(), 'data');
-  const [seedEmail, seedPassword] = (process.env.SEED_ADMIN?.trim() || ':').split(':');
+  const [seedEmail, seedPassword] = (process.env.SEED_ADMIN?.trim() || 'admin@example.com:admin1234').split(':');
 
   return {
     port: Number(process.env.PORT ?? 4000),
@@ -41,16 +41,16 @@ export function loadConfig(): ServerConfig {
     mongoUri: process.env.MONGODB_URI?.trim() || null,
     dataDir,
     filesDir: process.env.FILES_DIR?.trim() || path.join(dataDir, 'files'),
-    appUrls: (process.env.APP_URLS?.trim() || '')
+    appUrls: (process.env.APP_URLS?.trim() || 'http://localhost:4200')
       .split(',')
       .map((s) => s.trim())
       .filter(Boolean),
     jwtSecret: process.env.JWT_SECRET?.trim() || 'sahayak-dev-secret-change-me',
     authEnabled: (process.env.AUTH_ENABLED ?? 'true').trim().toLowerCase() !== 'false',
-    seedAdmin: seedEmail && seedEmail !== seedPassword
+    seedAdmin: seedEmail
       ? { email: seedEmail, password: seedPassword ?? '' }
       : null,
-    frontendDist: process.env.FRONTEND_DIST?.trim() || null,
+    frontendDist: process.env.FRONTEND_DIST?.trim() || path.resolve(process.cwd(), '../frontend/dist/sahayak/browser'),
     pathRouting: (process.env.PATH_ROUTING ?? 'false').trim().toLowerCase() === 'true',
   };
 }
