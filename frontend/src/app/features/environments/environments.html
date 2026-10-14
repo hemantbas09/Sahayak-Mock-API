@@ -468,6 +468,7 @@
                       <app-response-editor
                         [responseInput]="activeResponse"
                         [environmentUuidInput]="currentEnv.uuid"
+                        [routeMethodInput]="activeRoute.method"
                         (responseChange)="applyResponse($event)"
                       />
                     }

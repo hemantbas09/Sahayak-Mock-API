@@ -62,6 +62,7 @@ import type {
 } from '../lib/types';
 import type { EngineRequest, EngineResponse, EnvRuntime } from './context';
 import { clampLatency } from './context';
+import { validatePayload, renderValidationErrorBody } from './schemaValidator';
 
 /**
  * Structural mirror of the matcher's match result.
@@ -229,6 +230,41 @@ export function resolveMockResponse(
 
   // (2)–(5), (7), (8).
   const selected = selectResponse(route, runtime, deps);
+
+  // Payload schema validation (only for POST requests)
+  if (
+    route.method.toLowerCase() === 'post' &&
+    selected.payloadValidation?.enabled &&
+    selected.payloadValidation.schema?.trim()
+  ) {
+    const payloadToValidate = req.body !== undefined && req.body !== null ? req.body : req.rawBody;
+    const validation = validatePayload(payloadToValidate, selected.payloadValidation.schema);
+    if (!validation.valid) {
+      const errorBody = renderValidationErrorBody(
+        selected.payloadValidation.errorBody,
+        validation.errors
+      );
+      const headers: Record<string, string> = {
+        ...corsHeaders(),
+      };
+      for (const h of env.headers ?? []) {
+        headers[h.key.toLowerCase()] = h.value;
+      }
+      headers['content-type'] = 'application/json';
+
+      return {
+        statusCode: selected.payloadValidation.errorStatus || 400,
+        headers,
+        body: errorBody,
+        fileContentType: null,
+        latencyMs: clampLatency(selected.latency),
+        warnings: validation.errors,
+        proxied: false,
+        routeUuid: route.uuid,
+      };
+    }
+  }
+
   return buildResponse(env, route, selected, runtime, deps);
 }
 

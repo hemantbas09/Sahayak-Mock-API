@@ -58,6 +58,20 @@ export function createRouteResponse(label = 'Default'): RouteResponse {
     rules: [],
     rulesOperator: 'AND',
     defaultResponse: true,
+    payloadValidation: {
+      enabled: true,
+      schema: `id: number;\nname: string;\naddress?: string;\ntags?: string[];\nitems?: { id: number; title: string }[];`,
+      errorStatus: 400,
+      errorBody: JSON.stringify(
+        {
+          success: false,
+          message: 'payload is not matched, please review your payload',
+          code: '0',
+        },
+        null,
+        2
+      ),
+    },
   };
 }
 

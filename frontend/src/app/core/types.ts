@@ -48,6 +48,13 @@ export interface RouteRule {
   value: string;
 }
 
+export interface PayloadValidation {
+  enabled: boolean;
+  schema: string;
+  errorStatus: number;
+  errorBody: string;
+}
+
 export interface RouteResponse {
   uuid: string;
   label: string;
@@ -67,6 +74,7 @@ export interface RouteResponse {
   rulesOperator: RulesOperator;
   /** Exactly one default response per route (Mockoon convention). */
   defaultResponse: boolean;
+  payloadValidation?: PayloadValidation;
 }
 
 export interface Route {

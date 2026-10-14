@@ -10,11 +10,19 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import { RouteResponse, RouteRule, RulesOperator } from '../../../core/types';
+import { PayloadValidation, RouteResponse, RouteRule, RulesOperator } from '../../../core/types';
 import { MockApiClient } from '../../../core/mock-api.client';
 import { KvList } from '../../../shared/components/kv-list/kv-list';
 import { RuleEditor } from '../../../shared/components/rule-editor/rule-editor';
 import { SelectValueSync } from '../../../shared/directives/select-value-sync.directive';
+import {
+  DEFAULT_PAYLOAD_ERROR_BODY,
+  SAMPLE_PAYLOAD_SCHEMA,
+  inferTypeScriptSchema,
+  parseSchema,
+  renderValidationErrorBody,
+  validatePayload,
+} from '../../../core/schema-validator';
 
 /**
  * Modern developer-tool styled response editor.
@@ -35,6 +43,19 @@ import { SelectValueSync } from '../../../shared/directives/select-value-sync.di
           >
             Status & Body
           </button>
+          @if (isPostRoute()) {
+            <button
+              type="button"
+              class="response-studio__subtab"
+              [class.response-studio__subtab--active]="activeSubTab() === 'payload'"
+              (click)="activeSubTab.set('payload')"
+            >
+              Payload
+              @if (activeResponse.payloadValidation?.enabled) {
+                <span class="response-studio__subtab-badge">ON</span>
+              }
+            </button>
+          }
           <button
             type="button"
             class="response-studio__subtab"
@@ -178,6 +199,49 @@ import { SelectValueSync } from '../../../shared/directives/select-value-sync.di
             }
           }
         }
+        @if (isPostRoute() && activeSubTab() === 'payload') {
+          <div class="response-studio__payload-container">
+            <div class="response-studio__payload-card">
+              <div class="response-studio__payload-card-header">
+                <span class="response-studio__payload-card-title">Expected Payload Schema</span>
+                <span class="response-studio__schema-lang">TypeScript / JSON Schema</span>
+              </div>
+
+              <div class="response-studio__code-wrap response-studio__code-wrap--payload">
+                <div class="response-studio__line-numbers">
+                  @for (line of schemaLineNumbers(); track line) {
+                    <span>{{ line }}</span>
+                  }
+                </div>
+                <textarea
+                  class="response-studio__textarea"
+                  spellcheck="false"
+                  placeholder="id: number;&#10;name: string;&#10;address?: string;&#10;tags?: string[];&#10;items?: &#123; id: number; title: string &#125;[];"
+                  [value]="payloadSchemaValue(activeResponse)"
+                  (input)="onSchemaInput($event)"
+                ></textarea>
+              </div>
+
+              <div class="response-studio__schema-footer">
+                <div class="response-studio__schema-syntax-help">
+                  <button type="button" class="response-studio__syntax-pill" (click)="insertSchemaSnippet('id: number;\n')">id: number</button>
+                  <button type="button" class="response-studio__syntax-pill" (click)="insertSchemaSnippet('name: string;\n')">name: string</button>
+                  <button type="button" class="response-studio__syntax-pill" (click)="insertSchemaSnippet('address?: string;\n')">address?: string</button>
+                  <button type="button" class="response-studio__syntax-pill" (click)="insertSchemaSnippet('tags?: string[];\n')">tags?: string[]</button>
+                  <button type="button" class="response-studio__syntax-pill" (click)="insertSchemaSnippet('items?: &#123; id: number; title: string &#125;[];\n')">items: &#123; id: number &#125;[]</button>
+                </div>
+                @if (schemaSyntaxStatus(); as status) {
+                  <span
+                    class="response-studio__schema-status"
+                    [class.response-studio__schema-status--err]="!status.valid"
+                  >
+                    {{ status.message }}
+                  </span>
+                }
+              </div>
+            </div>
+          </div>
+        }
 
         @if (activeSubTab() === 'headers') {
           <div class="response-studio__panel-content">
@@ -237,8 +301,9 @@ export class ResponseEditor {
   readonly responseInput = input<RouteResponse | null>(null);
   readonly responseChange = output<RouteResponse>();
   readonly environmentUuidInput = input<string>('');
+  readonly routeMethodInput = input<string>('GET');
 
-  readonly activeSubTab = signal<'status-body' | 'headers' | 'rules' | 'settings'>('status-body');
+  readonly activeSubTab = signal<'status-body' | 'payload' | 'headers' | 'rules' | 'settings'>('status-body');
   readonly previewing = signal(false);
   readonly previewOutput = signal<string | null>(null);
   readonly previewWarning = signal<string | null>(null);
@@ -283,6 +348,10 @@ export class ResponseEditor {
     return Array.from({ length: Math.max(count, 14) }, (_, i) => i + 1);
   });
 
+  readonly isPostRoute = computed(() => {
+    return (this.routeMethodInput() || '').toLowerCase() === 'post';
+  });
+
   constructor() {
     effect(() => {
       const activeResponse = this.responseInput();
@@ -294,6 +363,12 @@ export class ResponseEditor {
       if (activeResponse) {
         this.bodyContent.set(activeResponse.body);
         this.cdr.markForCheck();
+      }
+    }, { allowSignalWrites: true });
+
+    effect(() => {
+      if (this.activeSubTab() === 'payload' && !this.isPostRoute()) {
+        this.activeSubTab.set('status-body');
       }
     }, { allowSignalWrites: true });
   }
@@ -424,5 +499,73 @@ export class ResponseEditor {
     this.previewOutput.set(null);
     this.previewWarning.set(null);
     this.previewError.set(null);
+  }
+
+  payloadSchemaValue(activeResponse?: RouteResponse | null): string {
+    const resp = activeResponse ?? this.responseInput();
+    if (!resp) return SAMPLE_PAYLOAD_SCHEMA;
+    if (resp.payloadValidation?.schema !== undefined && resp.payloadValidation.schema !== null) {
+      return resp.payloadValidation.schema;
+    }
+    return SAMPLE_PAYLOAD_SCHEMA;
+  }
+
+  readonly schemaLineNumbers = computed(() => {
+    const text = this.payloadSchemaValue();
+    const count = (text.match(/\n/g) || []).length + 1;
+    return Array.from({ length: Math.max(count, 8) }, (_, i) => i + 1);
+  });
+
+  readonly schemaSyntaxStatus = computed(() => {
+    const schema = (this.payloadSchemaValue() ?? '').trim();
+    if (!schema) {
+      return { valid: true, message: 'No schema defined (all payloads accepted)' };
+    }
+    try {
+      parseSchema(schema);
+      return { valid: true, message: '✓ Valid schema definition' };
+    } catch (e) {
+      return { valid: false, message: `⚠ ${e instanceof Error ? e.message : 'Invalid schema syntax'}` };
+    }
+  });
+
+  updatePayloadValidation(patch: Partial<PayloadValidation>): void {
+    const active = this.responseInput();
+    if (!active) return;
+    const current = active.payloadValidation ?? {
+      enabled: true,
+      schema: SAMPLE_PAYLOAD_SCHEMA,
+      errorStatus: 400,
+      errorBody: DEFAULT_PAYLOAD_ERROR_BODY,
+    };
+    const updated: PayloadValidation = {
+      ...current,
+      ...patch,
+    };
+    this.responseChange.emit({
+      ...active,
+      payloadValidation: updated,
+    });
+  }
+
+  onSchemaInput(event: Event): void {
+    const val = (event.target as HTMLTextAreaElement).value;
+    this.updatePayloadValidation({
+      enabled: val.trim().length > 0,
+      schema: val,
+      errorStatus: 400,
+      errorBody: DEFAULT_PAYLOAD_ERROR_BODY,
+    });
+  }
+
+  insertSchemaSnippet(snippet: string): void {
+    const current = this.payloadSchemaValue();
+    const updated = current ? `${current.trimEnd()}\n${snippet}` : snippet;
+    this.updatePayloadValidation({
+      enabled: true,
+      schema: updated,
+      errorStatus: 400,
+      errorBody: DEFAULT_PAYLOAD_ERROR_BODY,
+    });
   }
 }
