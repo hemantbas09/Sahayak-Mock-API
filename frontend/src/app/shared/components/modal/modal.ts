@@ -9,7 +9,7 @@ import { IconComponent } from '../icon/icon.component';
   imports: [IconComponent],
   template: `
     <div class="modal" (click)="closeOnBackdrop($event)">
-      <div class="modal__panel" role="dialog" aria-modal="true">
+      <div class="modal__panel modal__panel--{{ size() }}" role="dialog" aria-modal="true">
         <header class="modal__header">
           <h2 class="modal__title">{{ title() }}</h2>
           <button class="modal__close" type="button" aria-label="Close dialog" (click)="closed.emit()">
@@ -29,6 +29,7 @@ import { IconComponent } from '../icon/icon.component';
 })
 export class Modal {
   readonly title = input('');
+  readonly size = input<'sm' | 'md' | 'lg' | 'xl'>('md');
   readonly closed = output<void>();
 
   closeOnBackdrop(backdropEvent: Event): void {

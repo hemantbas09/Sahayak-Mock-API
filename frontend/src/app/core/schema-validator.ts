@@ -434,3 +434,78 @@ function validateValue(
     }
   }
 }
+
+export interface JsonErrorInfo {
+  title: string;
+  message: string;
+  line?: number;
+  column?: number;
+  snippet?: string;
+  suggestion: string;
+}
+
+export function analyzeJsonError(rawInput: string, err: unknown): JsonErrorInfo {
+  const rawMsg = err instanceof Error ? err.message : String(err);
+  const cleanMsg = rawMsg.replace(/^SyntaxError:\s*/i, '');
+
+  const lineColMatch = cleanMsg.match(/line\s+(\d+)\s+column\s+(\d+)/i);
+  const posMatch = cleanMsg.match(/position\s+(\d+)/i);
+
+  let line = lineColMatch ? parseInt(lineColMatch[1], 10) : undefined;
+  let column = lineColMatch ? parseInt(lineColMatch[2], 10) : undefined;
+
+  if ((!line || !column) && posMatch) {
+    const pos = parseInt(posMatch[1], 10);
+    const beforePos = rawInput.slice(0, pos);
+    const lines = beforePos.split('\n');
+    line = lines.length;
+    column = lines[lines.length - 1].length + 1;
+  }
+
+  const allLines = rawInput.split('\n');
+  let snippet: string | undefined;
+  if (line !== undefined) {
+    const startIdx = Math.max(0, line - 2);
+    const endIdx = Math.min(allLines.length, line + 1);
+    const resultLines: string[] = [];
+
+    for (let i = startIdx; i < endIdx; i++) {
+      const lineNum = i + 1;
+      const isTarget = lineNum === line;
+      const prefix = `${isTarget ? '>' : ' '} ${lineNum.toString().padStart(2, ' ')} | `;
+      resultLines.push(prefix + allLines[i]);
+      if (isTarget && column !== undefined) {
+        const indentLength = prefix.length + Math.max(0, column - 1);
+        resultLines.push(' '.repeat(indentLength) + '^');
+      }
+    }
+    snippet = resultLines.join('\n');
+  }
+
+  let suggestion = 'Check that all property keys are enclosed in double quotes (") and all brackets are closed.';
+  const lower = cleanMsg.toLowerCase();
+  const inputSnippetAtLine = line !== undefined ? (allLines[line - 1] || '') : rawInput;
+  const prevLine = line !== undefined && line > 1 ? (allLines[line - 2] || '').trim() : '';
+  const isClosingBrace = inputSnippetAtLine.trim().startsWith('}') || inputSnippetAtLine.trim().startsWith(']');
+
+  if ((isClosingBrace && prevLine.endsWith(',')) || inputSnippetAtLine.match(/,\s*[}\]]/)) {
+    suggestion = 'Trailing comma detected before closing "}" or "]". JSON does not permit trailing commas.';
+  } else if (inputSnippetAtLine.includes("'")) {
+    suggestion = 'Single quote detected. JSON requires double quotes (") for all keys and string values.';
+  } else if (lower.includes('unexpected end') || lower.includes('end of json') || lower.includes('end of data')) {
+    suggestion = 'Incomplete JSON. Check for missing closing curly brace "}" or closing square bracket "]".';
+  } else if (lower.includes('double-quoted') || lower.includes('property name')) {
+    suggestion = 'Expected double-quoted property name. Make sure keys are wrapped like "name": "value".';
+  } else if (lower.includes('unexpected token')) {
+    suggestion = 'Check for matching braces "{" and "}". Each opening brace must have a closing brace.';
+  }
+
+  return {
+    title: 'JSON is not formatted properly. Please format your JSON message.',
+    message: cleanMsg,
+    line,
+    column,
+    snippet,
+    suggestion,
+  };
+}

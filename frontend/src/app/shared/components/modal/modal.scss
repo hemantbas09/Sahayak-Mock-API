@@ -17,6 +17,22 @@
     border: 1px solid var(--border);
     border-radius: var(--r-lg);
     box-shadow: var(--shadow-lg);
+
+    &--sm {
+      width: min(440px, 100%);
+    }
+
+    &--md {
+      width: min(640px, 100%);
+    }
+
+    &--lg {
+      width: min(840px, 100%);
+    }
+
+    &--xl {
+      width: min(1140px, 96vw);
+    }
   }
 
   &__header {
