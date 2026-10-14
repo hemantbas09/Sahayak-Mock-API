@@ -38,18 +38,20 @@ export interface ApiDeps {
   allowedOrigins: string[];
 }
 
-/** Create the seed admin (email/password) on first boot when no users exist. */
+/** Create the seed admin (username/password) if not already created. */
 export async function ensureSeedUser(storage: StorageBackend, seed: { email: string; password: string }): Promise<void> {
-  const existing = await storage.listUsers();
-  if (existing.length > 0) return;
   if (!seed.email || !seed.password) return;
-  await storage.createUser({
-    email: seed.email,
-    passwordHash: await hashPassword(seed.password),
-    role: 'admin',
-    createdAt: new Date().toISOString(),
-  });
-  console.log(`[Auth] Seeded admin user ${seed.email}`);
+  const existing = await storage.listUsers();
+  const found = existing.find((u) => u.email.toLowerCase() === seed.email.toLowerCase());
+  if (!found) {
+    await storage.createUser({
+      email: seed.email,
+      passwordHash: await hashPassword(seed.password),
+      role: 'admin',
+      createdAt: new Date().toISOString(),
+    });
+    console.log(`[Auth] Seeded admin user ${seed.email}`);
+  }
 }
 
 export function createApiRouter(deps: ApiDeps): Router {
@@ -286,22 +288,23 @@ export function createAuthRouter(deps: ApiDeps): Router {
   router.use(json({ limit: '1mb' }));
 
   router.post('/login', async (req, res) => {
-    const { email, password } = req.body as { email?: string; password?: string };
-    if (!email || !password) {
-      res.status(400).json({ error: 'Expected { email, password }' });
+    const identifier = ((req.body as { username?: string; email?: string }).username || (req.body as { username?: string; email?: string }).email)?.trim();
+    const password = (req.body as { password?: string }).password;
+    if (!identifier || !password) {
+      res.status(400).json({ error: 'Expected username and password' });
       return;
     }
-    const user = await storage.getUserByEmail(email);
+    const user = await storage.getUserByEmail(identifier);
     if (!user || !(await verifyPassword(password, user.passwordHash))) {
       res.status(401).json({ error: 'Invalid credentials' });
       return;
     }
     const token = signToken({ email: user.email, role: user.role }, auth.secret);
-    res.json({ token, user: { email: user.email, role: user.role } });
+    res.json({ token, user: { username: user.email, email: user.email, role: user.role } });
   });
 
   router.get('/me', authMiddleware(auth, auth.secret), (req, res) => {
-    res.json({ email: req.user?.email, role: req.user?.role });
+    res.json({ username: req.user?.email, email: req.user?.email, role: req.user?.role });
   });
 
   router.get('/users', authMiddleware(auth, auth.secret), requireRole('admin'), async (_req, res) => {

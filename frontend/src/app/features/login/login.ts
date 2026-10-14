@@ -17,7 +17,7 @@ export class Login {
   private readonly authStore = inject(AuthStore);
   private readonly router = inject(Router);
 
-  readonly emailInput = signal('admin@example.com');
+  readonly usernameInput = signal('');
   readonly passwordInput = signal('');
   readonly submitting = signal(false);
   readonly loginError = signal<string | null>(null);
@@ -31,7 +31,7 @@ export class Login {
     this.loginError.set(null);
     this.submitting.set(true);
     try {
-      await this.authStore.login(this.emailInput(), this.passwordInput());
+      await this.authStore.login(this.usernameInput(), this.passwordInput());
       await this.router.navigate(['/environments']);
     } catch (caught) {
       this.loginError.set(caught instanceof Error ? caught.message : 'Login failed');

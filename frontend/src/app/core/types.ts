@@ -132,7 +132,8 @@ export interface Environment {
 export type UserRole = 'admin' | 'editor' | 'viewer';
 
 export interface AuthUser {
-  email: string;
+  username?: string;
+  email?: string;
   role: UserRole;
 }
 

@@ -46,16 +46,7 @@ export class EnvironmentsStore {
     } catch (caught) {
       const msg = this.messageFrom(caught);
       if (this.isAuthError(caught, msg)) {
-        const ok = await this.authStore.autoAuthenticateSeed();
-        if (ok) {
-          try {
-            this.list.set(await this.apiClient.listEnvironments());
-            this.saveError.set(null);
-            return;
-          } catch {
-            // ignore retry failure
-          }
-        }
+        this.authStore.logout();
         return;
       }
       if (msg) this.saveError.set(msg);
@@ -76,20 +67,7 @@ export class EnvironmentsStore {
     } catch (caught) {
       const msg = this.messageFrom(caught);
       if (this.isAuthError(caught, msg)) {
-        const ok = await this.authStore.autoAuthenticateSeed();
-        if (ok) {
-          try {
-            const fullEnvironment = await this.apiClient.getEnvironment(environmentUuid);
-            this.current.set(fullEnvironment);
-            this.savedVersion.set(fullEnvironment.version);
-            this.savedSnapshot = structuredClone(fullEnvironment);
-            this.selectedUuid.set(environmentUuid);
-            this.dirty.set(false);
-            return;
-          } catch {
-            // ignore retry failure
-          }
-        }
+        this.authStore.logout();
         return;
       }
       if (msg) this.saveError.set(msg);

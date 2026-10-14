@@ -80,6 +80,47 @@
         </button>
       }
     }
+
+    @if (currentUser(); as user) {
+      <div class="sahayak-topbar__user-menu">
+        <button
+          type="button"
+          class="sahayak-topbar__avatar-btn"
+          [class.sahayak-topbar__avatar-btn--active]="showUserDropdown()"
+          (click)="toggleUserDropdown($event)"
+          title="Account: {{ user.username || user.email }}"
+        >
+          <span class="sahayak-topbar__avatar-circle">
+            {{ getUserInitial() }}
+          </span>
+        </button>
+
+        @if (showUserDropdown()) {
+          <div class="sahayak-topbar__dropdown" (click)="$event.stopPropagation()">
+            <div class="sahayak-topbar__dropdown-header">
+              <span class="sahayak-topbar__dropdown-avatar">
+                {{ getUserInitial() }}
+              </span>
+              <div class="sahayak-topbar__dropdown-info">
+                <span class="sahayak-topbar__dropdown-email" title="{{ user.username || user.email }}">{{ user.username || user.email }}</span>
+                <span class="sahayak-topbar__dropdown-role">{{ user.role }}</span>
+              </div>
+            </div>
+
+            <div class="sahayak-topbar__dropdown-divider"></div>
+
+            <button
+              type="button"
+              class="sahayak-topbar__dropdown-item sahayak-topbar__dropdown-item--danger"
+              (click)="onLogout()"
+            >
+              <app-icon name="log-out" [size]="13" />
+              <span>Log out</span>
+            </button>
+          </div>
+        }
+      </div>
+    }
   </div>
 </header>
 

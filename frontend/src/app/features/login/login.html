@@ -1,22 +1,30 @@
 <main class="login-screen">
   <form class="login-screen__card" (ngSubmit)="submitLogin()">
-    <h1 class="login-screen__title">Sahayak</h1>
-    <p class="login-screen__subtitle">API Mock Server</p>
+    <div class="login-screen__header">
+      <div class="login-screen__badge">S</div>
+      <div>
+        <h1 class="login-screen__title">Sahayak</h1>
+        <p class="login-screen__subtitle">API Mock Server Platform</p>
+      </div>
+    </div>
 
     @if (loginError(); as errorMessage) {
-      <p class="login-screen__error" role="alert">{{ errorMessage }}</p>
+      <div class="login-screen__error" role="alert">
+        <span>⚠ {{ errorMessage }}</span>
+      </div>
     }
 
     <label class="login-screen__field">
-      <span class="login-screen__label">Email</span>
+      <span class="login-screen__label">Username</span>
       <input
         class="login-screen__input"
-        type="email"
-        name="email"
+        type="text"
+        name="username"
         required
         autocomplete="username"
-        [ngModel]="emailInput()"
-        (ngModelChange)="emailInput.set($event)"
+        placeholder="Enter username"
+        [ngModel]="usernameInput()"
+        (ngModelChange)="usernameInput.set($event)"
       />
     </label>
 
@@ -28,6 +36,7 @@
         name="password"
         required
         autocomplete="current-password"
+        placeholder="••••••••"
         [ngModel]="passwordInput()"
         (ngModelChange)="passwordInput.set($event)"
       />
@@ -36,9 +45,5 @@
     <button class="login-screen__submit" type="submit" [disabled]="submitting()">
       @if (submitting()) { Signing in… } @else { Sign in }
     </button>
-
-    <p class="login-screen__hint">
-      Default admin: <code>admin&#64;sahayak.local</code> / <code>admin1234</code>
-    </p>
   </form>
 </main>

@@ -33,7 +33,10 @@ export interface ServerConfig {
 
 export function loadConfig(): ServerConfig {
   const dataDir = process.env.DATA_DIR?.trim() || path.join(process.cwd(), 'data');
-  const [seedEmail, seedPassword] = (process.env.SEED_ADMIN?.trim() || 'admin@example.com:admin1234').split(':');
+  const rawSeed = (process.env.SEED_ADMIN?.trim() || 'frontend:Best@?vDo');
+  const colonIdx = rawSeed.indexOf(':');
+  const seedEmail = colonIdx !== -1 ? rawSeed.slice(0, colonIdx) : rawSeed;
+  const seedPassword = colonIdx !== -1 ? rawSeed.slice(colonIdx + 1) : '';
 
   return {
     port: Number(process.env.PORT ?? 4000),

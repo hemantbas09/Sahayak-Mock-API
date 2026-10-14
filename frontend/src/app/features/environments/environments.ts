@@ -66,6 +66,7 @@ export class Environments implements OnInit {
 
   // --- Card dropdown & Project deletion state ---
   readonly activeCardMenuUuid = signal<string | null>(null);
+  readonly showUserDropdown = signal<boolean>(false);
   readonly projectToDelete = signal<{ uuid: string; name: string; port: number; routeCount: number } | null>(null);
   readonly isDeletingProject = signal<boolean>(false);
 
@@ -305,6 +306,29 @@ export class Environments implements OnInit {
     if (this.activeCardMenuUuid()) {
       this.closeCardMenu();
     }
+    if (this.showUserDropdown()) {
+      this.closeUserDropdown();
+    }
+  }
+
+  toggleUserDropdown(event?: MouseEvent): void {
+    event?.stopPropagation();
+    this.showUserDropdown.update((cur) => !cur);
+  }
+
+  closeUserDropdown(): void {
+    this.showUserDropdown.set(false);
+  }
+
+  getUserInitial(): string {
+    const u = this.currentUser();
+    const identifier = u?.username || u?.email;
+    return identifier ? identifier.charAt(0).toUpperCase() : 'A';
+  }
+
+  onLogout(): void {
+    this.closeUserDropdown();
+    this.logout();
   }
 
   toggleCardMenu(uuid: string, event?: MouseEvent): void {

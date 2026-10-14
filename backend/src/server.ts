@@ -56,7 +56,7 @@ async function main() {
 
   const logs = new LogService(storage);
 
-  if (config.authEnabled && config.seedAdmin) {
+  if (config.seedAdmin) {
     await ensureSeedUser(storage, config.seedAdmin);
   }
 
