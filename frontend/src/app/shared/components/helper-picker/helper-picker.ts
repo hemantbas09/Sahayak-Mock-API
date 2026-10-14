@@ -1,15 +1,13 @@
 import { Component, output, signal } from '@angular/core';
 import { ALL_HELPER_ENTRIES, HELPER_GROUPS, HelperEntry } from '../../../core/helper-catalog';
+import { IconComponent } from '../icon/icon.component';
 
 /**
- * F5 — searchable helper cheat-sheet. Block: .helper-picker
- *
- * A toggle button opens a panel of grouped, filterable helper snippets.
- * Clicking one emits `insertSnippet` — the parent (body editor) inserts it
- * at the saved caret position of its textarea.
+ * Searchable helper cheat-sheet. Block: .helper-picker
  */
 @Component({
   selector: 'app-helper-picker',
+  imports: [IconComponent],
   template: `
     <span class="helper-picker">
       <button
@@ -19,7 +17,8 @@ import { ALL_HELPER_ENTRIES, HELPER_GROUPS, HelperEntry } from '../../../core/he
         [attr.aria-expanded]="open()"
         (click)="open.set(!open())"
       >
-        🧩 Helpers
+        <app-icon name="code" [size]="12" />
+        <span>Template helpers</span>
       </button>
 
       @if (open()) {
@@ -61,7 +60,6 @@ export class HelperPicker {
   readonly open = signal(false);
   readonly searchTerm = signal('');
 
-  /** Groups after filtering by the search term (hidden groups dropped). */
   visibleGroups(): { id: string; label: string; entries: HelperEntry[] }[] {
     const needle = this.searchTerm().trim().toLowerCase();
     return HELPER_GROUPS.map((group) => ({
@@ -80,7 +78,6 @@ export class HelperPicker {
     this.insertSnippet.emit(entry.snippet);
   }
 
-  /** Total entry count — handy for a tooltip. */
   get totalEntries(): number {
     return ALL_HELPER_ENTRIES.length;
   }

@@ -1,4 +1,4 @@
-// Base styles — reset and element defaults. No component classes here.
+// Base styles — reset and element defaults.
 @use 'tokens' as *;
 
 *,
@@ -22,22 +22,31 @@ body {
   -webkit-font-smoothing: antialiased;
 }
 
+button,
+input,
+select,
+textarea {
+  font-family: inherit;
+  font-size: inherit;
+  color: inherit;
+}
+
 code,
 pre,
 kbd,
 samp {
   font-family: $font-mono;
-  font-size: 0.95em;
+  font-size: $font-size-sm;
 }
 
 ::selection {
-  background: rgba(56, 189, 248, 0.3);
+  background: rgba(59, 130, 246, 0.3);
 }
 
 // Subtle scrollbars (WebKit)
 ::-webkit-scrollbar {
-  width: 10px;
-  height: 10px;
+  width: 8px;
+  height: 8px;
 }
 
 ::-webkit-scrollbar-track {
@@ -46,7 +55,7 @@ samp {
 
 ::-webkit-scrollbar-thumb {
   background: $color-border;
-  border-radius: $radius-pill;
+  border-radius: $radius-sm;
 }
 
 ::-webkit-scrollbar-thumb:hover {

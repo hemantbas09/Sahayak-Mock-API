@@ -3,11 +3,11 @@
 .env-settings {
   display: flex;
   flex-direction: column;
-  gap: $space-4;
+  gap: var(--s3);
 
   &__row {
     display: flex;
-    gap: $space-3;
+    gap: var(--s2);
     align-items: flex-end;
     flex-wrap: wrap;
   }
@@ -15,8 +15,8 @@
   &__field {
     display: flex;
     flex-direction: column;
-    gap: $space-1;
-    min-width: 160px;
+    gap: var(--s1);
+    min-width: 140px;
 
     &--grow {
       flex: 1;
@@ -24,65 +24,65 @@
   }
 
   &__label {
-    color: $color-text-muted;
-    font-size: $font-size-sm;
+    color: var(--text-muted);
+    font-size: var(--text-xs);
   }
 
   &__input {
     width: 100%;
-    padding: $space-2;
-    background: $color-bg;
-    border: 1px solid $color-border;
-    border-radius: $radius-sm;
-    color: $color-text;
-    font-size: $font-size-sm;
+    height: 28px;
+    padding: 0 var(--s2);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    color: var(--text);
+    font-size: var(--text-xs);
     box-sizing: border-box;
 
     &:focus {
       outline: none;
-      border-color: $color-primary;
+      border-color: var(--accent);
     }
 
     &--narrow {
-      width: 110px;
+      width: 100px;
     }
   }
 
   &__section {
     display: flex;
     flex-direction: column;
-    gap: $space-2;
-    padding: $space-3;
-    background: $color-bg;
-    border: 1px solid $color-border;
-    border-radius: $radius-md;
+    gap: var(--s2);
+    padding: var(--s3);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
   }
 
   &__section-label {
     margin: 0;
-    color: $color-text-muted;
-    font-size: $font-size-sm;
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+    font-weight: 600;
     text-transform: uppercase;
-    letter-spacing: 0.06em;
   }
 
   &__check {
     display: inline-flex;
     align-items: center;
-    gap: $space-2;
-    color: $color-text;
-    font-size: $font-size-sm;
+    gap: var(--s2);
+    color: var(--text);
+    font-size: var(--text-xs);
     cursor: pointer;
-    margin-bottom: $space-2;
 
     input {
-      accent-color: $color-primary;
+      accent-color: var(--accent);
     }
   }
 
   &__hint {
     margin: 0;
-    color: $color-text-muted;
-    font-size: $font-size-sm;
+    color: var(--text-muted);
+    font-size: var(--text-xs);
   }
 }

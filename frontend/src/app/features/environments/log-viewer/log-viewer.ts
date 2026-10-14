@@ -3,17 +3,14 @@ import { MockApiClient } from '../../../core/mock-api.client';
 import { EnvironmentSummary, RequestLog } from '../../../core/types';
 import { formatLogTime as formatLogTimeImport } from '../../../core/utils';
 import { ElapsedTimePipe } from '../../../shared/pipes/elapsed-time.pipe';
+import { IconComponent } from '../../../shared/components/icon/icon.component';
 
 /**
- * F13 — live request log viewer. Block: .log-viewer
- *
- * Polls GET /api/logs every 5 s (pausable), filters by environment, and
- * shows method/path/status/latency rows with expandable detail (request +
- * response headers, bodies). The clear action is admin-only (DELETE /api/logs).
+ * Live request log viewer. Block: .log-viewer
  */
 @Component({
   selector: 'app-log-viewer',
-  imports: [ElapsedTimePipe],
+  imports: [ElapsedTimePipe, IconComponent],
   template: `
     <div class="log-viewer">
       <header class="log-viewer__head">
@@ -27,11 +24,12 @@ import { ElapsedTimePipe } from '../../../shared/pipes/elapsed-time.pipe';
           >
             <option value="">all environments</option>
             @for (summary of environmentsInput(); track summary.uuid) {
-              <option [value]="summary.uuid">{{ summary.name }} ({{ summary.port }})</option>
+              <option [value]="summary.uuid">{{ summary.name }} (:{{ summary.port }})</option>
             }
           </select>
           <button class="log-viewer__pause" type="button" (click)="togglePause()">
-            {{ paused() ? '▶ Resume' : '⏸ Pause' }}
+            <app-icon [name]="paused() ? 'play' : 'pause'" [size]="12" />
+            <span>{{ paused() ? 'Resume' : 'Pause' }}</span>
           </button>
           @if (canClearInput()) {
             <button
@@ -39,7 +37,10 @@ import { ElapsedTimePipe } from '../../../shared/pipes/elapsed-time.pipe';
               type="button"
               [disabled]="clearing()"
               (click)="clearAllLogs()"
-            >🗑 Clear</button>
+            >
+              <app-icon name="trash" [size]="12" />
+              <span>Clear</span>
+            </button>
           }
           <span class="log-viewer__status">
             @if (paused()) {
@@ -57,7 +58,7 @@ import { ElapsedTimePipe } from '../../../shared/pipes/elapsed-time.pipe';
 
       @if (logs().length === 0) {
         <p class="log-viewer__empty">
-          No requests yet — hit the mock port and watch the log fill up.
+          No requests recorded. Send requests to the active mock port to inspect logs.
         </p>
       } @else {
         <table class="log-viewer__table">
@@ -110,7 +111,7 @@ import { ElapsedTimePipe } from '../../../shared/pipes/elapsed-time.pipe';
                   <td colspan="5">
                     <div class="log-viewer__detail">
                       <p class="log-viewer__detail-env">
-                        env: {{ envNameFor(logEntry.envUuid) }} · from {{ logEntry.ip }}
+                        env: {{ envNameFor(logEntry.envUuid) }} · ip: {{ logEntry.ip }}
                       </p>
                       <div class="log-viewer__detail-grid">
                         <div class="log-viewer__detail-block">
@@ -151,6 +152,7 @@ export class LogViewer implements OnInit, OnDestroy {
   private pollTimerId: ReturnType<typeof setInterval> | null = null;
 
   readonly environmentsInput = input<EnvironmentSummary[]>([]);
+  readonly environmentUuidInput = input<string | null>(null);
   /** Show the (admin-only) clear button. */
   readonly canClearInput = input(false);
 
@@ -169,6 +171,10 @@ export class LogViewer implements OnInit, OnDestroy {
   private static readonly MAX_LOGS = 200;
 
   ngOnInit(): void {
+    const initialUuid = this.environmentUuidInput();
+    if (initialUuid) {
+      this.filterEnvUuid.set(initialUuid);
+    }
     void this.poll();
     this.pollTimerId = setInterval(() => {
       this.nowMs.set(Date.now());
@@ -237,7 +243,6 @@ export class LogViewer implements OnInit, OnDestroy {
         envUuid: this.filterEnvUuid() || undefined,
         limit: LogViewer.MAX_LOGS,
       });
-      // Newest first (server may return oldest-first).
       nextLogs.sort((earlierLog, laterLog) => laterLog.ts - earlierLog.ts);
       this.logs.set(nextLogs);
       this.lastUpdated.set(Date.now());

@@ -2,21 +2,22 @@ import { Component, input, output } from '@angular/core';
 import { RouteResponse } from '../../../core/types';
 import { createRouteResponse } from '../../../core/defaults';
 import { newUuid } from '../../../core/utils';
+import { IconComponent } from '../../../shared/components/icon/icon.component';
 
 /**
- * F10 — response list (per route). Block: .response-list
- *
- * Controlled: renders `responsesInput` in walk order and emits the next
- * full array on structural mutation; field edits come back via
- * `responseChange` with the mutated clone.
+ * Response list (per route). Block: .response-list
  */
 @Component({
   selector: 'app-response-list',
+  imports: [IconComponent],
   template: `
     <div class="response-list">
       <header class="response-list__head">
         <h4 class="response-list__heading">Responses</h4>
-        <button class="response-list__add" type="button" (click)="addResponse()">+ Add response</button>
+        <button class="response-list__add" type="button" (click)="addResponse()">
+          <app-icon name="plus" [size]="12" />
+          <span>Add response</span>
+        </button>
       </header>
 
       @for (responseRow of responsesInput(); track responseRow.uuid; let responseIndex = $index) {
@@ -27,7 +28,7 @@ import { newUuid } from '../../../core/utils';
         >
           <label
             class="response-list__default"
-            [title]="'mark as the default response'"
+            [title]="'Default fallback response'"
             (click)="$event.stopPropagation()"
           >
             <input
@@ -59,24 +60,32 @@ import { newUuid } from '../../../core/utils';
               title="Move up"
               [disabled]="responseIndex === 0"
               (click)="moveResponse(responseIndex, -1)"
-            >↑</button>
+            >
+              <app-icon name="arrow-up" [size]="12" />
+            </button>
             <button
               type="button"
               title="Move down"
               [disabled]="responseIndex === responsesInput().length - 1"
               (click)="moveResponse(responseIndex, 1)"
-            >↓</button>
-            <button type="button" title="Duplicate response" (click)="duplicateResponse(responseRow)">⧉</button>
+            >
+              <app-icon name="arrow-down" [size]="12" />
+            </button>
+            <button type="button" title="Duplicate response" (click)="duplicateResponse(responseRow)">
+              <app-icon name="copy" [size]="12" />
+            </button>
             <button
               type="button"
               title="Delete response"
               class="response-list__delete"
               (click)="deleteResponse(responseRow)"
-            >🗑</button>
+            >
+              <app-icon name="trash" [size]="12" />
+            </button>
           </span>
         </div>
       } @empty {
-        <p class="response-list__empty">No responses — add one (the first becomes the default).</p>
+        <p class="response-list__empty">No responses configured.</p>
       }
     </div>
   `,
@@ -85,9 +94,7 @@ import { newUuid } from '../../../core/utils';
 export class ResponseList {
   readonly responsesInput = input<RouteResponse[]>([]);
   readonly responsesChange = output<RouteResponse[]>();
-  /** Response whose editor should be focused (row click). */
   readonly selectChange = output<string>();
-  /** Highlighted row (the one open in the editor). */
   readonly selectedUuidInput = input<string | null>(null);
 
   addResponse(): void {
@@ -119,7 +126,6 @@ export class ResponseList {
     }
     const sourceResponses = this.responsesInput();
     let nextResponses = sourceResponses.filter((otherResponse) => otherResponse.uuid !== responseRow.uuid);
-    // Keep exactly one default when the deleted row carried it.
     if (responseRow.defaultResponse && nextResponses.length > 0 && !nextResponses.some((otherResponse) => otherResponse.defaultResponse)) {
       nextResponses = nextResponses.map((otherResponse, otherIndex) =>
         otherIndex === 0 ? { ...otherResponse, defaultResponse: true } : otherResponse,

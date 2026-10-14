@@ -1,182 +1,306 @@
-import { Component, ElementRef, effect, inject, input, output, signal, viewChild } from '@angular/core';
-import { DataBucket, KeyValue, RouteResponse, RouteRule, RulesOperator } from '../../../core/types';
+import {
+  Component,
+  ElementRef,
+  computed,
+  effect,
+  inject,
+  input,
+  output,
+  signal,
+  viewChild,
+} from '@angular/core';
+import { DataBucket, RouteResponse, RouteRule, RulesOperator } from '../../../core/types';
 import { MockApiClient } from '../../../core/mock-api.client';
 import { KvList } from '../../../shared/components/kv-list/kv-list';
 import { RuleEditor } from '../../../shared/components/rule-editor/rule-editor';
-import { SelectValueSync } from '../../../shared/directives/select-value-sync.directive';
 import { HelperPicker } from '../../../shared/components/helper-picker/helper-picker';
-import { TemplateHint } from '../../../shared/components/template-hint/template-hint';
+import { IconComponent } from '../../../shared/components/icon/icon.component';
 
 /**
- * F10 — response editor (per response). Block: .response-editor
- *
- * Controlled: renders `responseInput` and emits the mutated clone on every
- * field change. The INLINE body textarea is intentionally *uncontrolled*
- * after the first render (caret position must survive store echoes), so
- * "preview render" and "add response" read the live textarea value.
+ * Modern developer-tool styled response editor.
  */
 @Component({
   selector: 'app-response-editor',
-  imports: [KvList, RuleEditor, HelperPicker, TemplateHint, SelectValueSync],
+  imports: [KvList, RuleEditor, HelperPicker, IconComponent],
   template: `
     @if (responseInput(); as activeResponse) {
-      <div class="response-editor">
-      <!-- metadata row -->
-      <div class="response-editor__meta">
-        <label class="response-editor__field">
-          <span class="response-editor__label">Label</span>
-          <input
-            type="text"
-            class="response-editor__label-input"
-            placeholder="e.g. Success"
-            [value]="activeResponse.label"
-            (change)="setStringField('label', $event)"
-          />
-        </label>
-
-        <label class="response-editor__field">
-          <span class="response-editor__label">Status</span>
-          <input
-            type="number"
-            class="response-editor__status-input"
-            min="100"
-            max="599"
-            [value]="activeResponse.statusCode"
-            (change)="setStatusField($event)"
-          />
-        </label>
-
-        <label class="response-editor__field">
-          <span class="response-editor__label">Latency (ms)</span>
-          <input
-            type="number"
-            class="response-editor__latency-input"
-            min="0"
-            [value]="activeResponse.latency"
-            (change)="setLatencyField($event)"
-          />
-        </label>
-      </div>
-
-      <!-- headers -->
-      <div class="response-editor__section">
-        <p class="response-editor__section-label">Response headers</p>
-        <app-kv-list
-          [itemsInput]="activeResponse.headers"
-          keyPlaceholderInput="Header name"
-          valuePlaceholderInput="Value (templating ok)"
-          (itemsChange)="setHeaders($event)"
-        />
-      </div>
-
-      <!-- body -->
-      <div class="response-editor__section">
-        <div class="response-editor__body-head">
-          <p class="response-editor__section-label">Body</p>
-          <select
-            class="response-editor__body-type"
-            [value]="activeResponse.bodyType"
-            (change)="setBodyType($event)"
-            aria-label="Body type"
+      <div class="response-studio">
+        <!-- Response Sub-tabs -->
+        <nav class="response-studio__subtabs">
+          <button
+            type="button"
+            class="response-studio__subtab"
+            [class.response-studio__subtab--active]="activeSubTab() === 'status-body'"
+            (click)="activeSubTab.set('status-body')"
           >
-            <option value="INLINE">Inline</option>
-            <option value="FILE">File</option>
-            <option value="DATABUCKET">Data bucket</option>
-            <option value="NONE">None</option>
-          </select>
-        </div>
+            Status & Body
+          </button>
+          <button
+            type="button"
+            class="response-studio__subtab"
+            [class.response-studio__subtab--active]="activeSubTab() === 'headers'"
+            (click)="activeSubTab.set('headers')"
+          >
+            Headers ({{ activeResponse.headers.length }})
+          </button>
+          <button
+            type="button"
+            class="response-studio__subtab"
+            [class.response-studio__subtab--active]="activeSubTab() === 'rules'"
+            (click)="activeSubTab.set('rules')"
+          >
+            Rules ({{ activeResponse.rules.length }})
+          </button>
+          <button
+            type="button"
+            class="response-studio__subtab"
+            [class.response-studio__subtab--active]="activeSubTab() === 'settings'"
+            (click)="activeSubTab.set('settings')"
+          >
+            Settings
+          </button>
+        </nav>
 
-        @switch (activeResponse.bodyType) {
-          @case ('INLINE') {
-            <div class="response-editor__inline">
-              <div class="response-editor__inline-toolbar">
-                <app-helper-picker (insertSnippet)="insertSnippetIntoBody($event)" />
-              </div>
-              <textarea
-                #bodyTextarea
-                class="response-editor__body-textarea"
-                rows="8"
-                spellcheck="false"
-                placeholder='{"name": "use the helper picker", "id": "…"}'
-                [value]="bodySeedValue()"
-                (input)="commitBodyText()"
-              ></textarea>
-              <app-template-hint (insertSnippet)="insertSnippetIntoBody($event)" />
-              <div class="response-editor__preview-row">
-                <button
-                  class="response-editor__preview-btn"
-                  type="button"
-                  [disabled]="previewing()"
-                  (click)="previewBody()"
-                >
-                  {{ previewing() ? 'Rendering…' : '▶ Preview render' }}
-                </button>
-              </div>
-              @if (previewOutput(); as previewResult) {
-                <div class="response-editor__preview">
-                  <pre class="response-editor__preview-output">{{ previewResult }}</pre>
-                </div>
-              }
-              @if (previewWarning(); as previewWarningText) {
-                <p class="response-editor__preview-warning">{{ previewWarningText }}</p>
-              }
-              @if (previewError(); as previewErrorText) {
-                <p class="response-editor__preview-error">{{ previewErrorText }}</p>
-              }
+        @if (activeSubTab() === 'status-body') {
+          <!-- Status Code & Latency Bar -->
+          <div class="response-studio__status-row">
+            <div class="response-studio__status-select-wrap">
+              <select
+                class="response-studio__status-select"
+                [value]="activeResponse.statusCode"
+                (change)="setStatusField($event)"
+              >
+                <option [value]="200">200 - OK</option>
+                <option [value]="201">201 - Created</option>
+                <option [value]="204">204 - No Content</option>
+                <option [value]="400">400 - Bad Request</option>
+                <option [value]="401">401 - Unauthorized</option>
+                <option [value]="403">403 - Forbidden</option>
+                <option [value]="404">404 - Not Found</option>
+                <option [value]="409">409 - Conflict</option>
+                <option [value]="500">500 - Internal Server Error</option>
+              </select>
             </div>
-          }
 
-          @case ('FILE') {
-            <div class="response-editor__file">
+            <div class="response-studio__latency-wrap">
+              <app-icon name="clock" [size]="12" />
+              <input
+                type="number"
+                class="response-studio__latency-input"
+                min="0"
+                max="60000"
+                [value]="activeResponse.latency"
+                (change)="setLatencyField($event)"
+              />
+              <span class="response-studio__latency-unit">ms</span>
+            </div>
+
+            <div class="response-studio__resp-docs-wrap">
               <input
                 type="text"
-                class="response-editor__file-input"
-                placeholder="/var/www/templates/payload.json (templated)"
-                [value]="activeResponse.filePath"
-                (change)="setStringField('filePath', $event)"
+                class="response-studio__resp-docs"
+                placeholder="Documentation (e.g. Success response with user payload)"
+                [value]="activeResponse.label"
+                (change)="setStringField('label', $event)"
               />
-              <p class="response-editor__hint">
-                The file is read from the mock server's filesystem at request time; its content is templated.
-              </p>
             </div>
-          }
+          </div>
 
-          @case ('DATABUCKET') {
-            <div class="response-editor__bucket">
-              <select
-                class="response-editor__bucket-select"
-                [value]="activeResponse.databucketId"
-                [syncSelectValue]="activeResponse.databucketId"
-                (change)="setStringField('databucketId', $event)"
+          <!-- Body Type Selector Tabs -->
+          <div class="response-studio__body-toolbar">
+            <span class="response-studio__body-title">Response body</span>
+            <div class="response-studio__body-types">
+              <button
+                type="button"
+                class="response-studio__body-pill"
+                [class.response-studio__body-pill--active]="activeResponse.bodyType === 'INLINE'"
+                (click)="setBodyTypeDirect('INLINE')"
               >
-                <option value="" disabled>Select bucket…</option>
-                @for (bucket of bucketsInput(); track bucket.uuid) {
-                  <option [value]="bucket.uuid">{{ bucket.name }}</option>
-                }
-              </select>
-              <p class="response-editor__hint">
-                The bucket's generated content is served raw (no templating at render time).
-              </p>
+                Inline
+              </button>
+              <button
+                type="button"
+                class="response-studio__body-pill"
+                [class.response-studio__body-pill--active]="activeResponse.bodyType === 'FILE'"
+                (click)="setBodyTypeDirect('FILE')"
+              >
+                File
+              </button>
+              <button
+                type="button"
+                class="response-studio__body-pill"
+                [class.response-studio__body-pill--active]="activeResponse.bodyType === 'DATABUCKET'"
+                (click)="setBodyTypeDirect('DATABUCKET')"
+              >
+                Data bucket
+              </button>
+              <button
+                type="button"
+                class="response-studio__body-pill"
+                [class.response-studio__body-pill--active]="activeResponse.bodyType === 'NONE'"
+                (click)="setBodyTypeDirect('NONE')"
+              >
+                None
+              </button>
             </div>
-          }
+          </div>
 
-          @case ('NONE') {
-            <p class="response-editor__hint">Empty body — headers and status only.</p>
+          <!-- Body Content Area -->
+          @switch (activeResponse.bodyType) {
+            @case ('INLINE') {
+              <div class="response-studio__editor-container">
+                <div class="response-studio__editor-header">
+                  <app-helper-picker (insertSnippet)="insertSnippetIntoBody($event)" />
+                  <div class="response-studio__editor-header-actions">
+                    <button
+                      type="button"
+                      class="response-studio__preview-btn"
+                      [disabled]="previewing()"
+                      (click)="previewBody()"
+                    >
+                      @if (previewing()) {
+                        Rendering…
+                      } @else {
+                        <app-icon name="play" [size]="12" />
+                        <span>Preview</span>
+                      }
+                    </button>
+                  </div>
+                </div>
+
+                <div class="response-studio__code-wrap">
+                  <div class="response-studio__line-numbers">
+                    @for (line of lineNumbers(); track line) {
+                      <span>{{ line }}</span>
+                    }
+                  </div>
+                  <textarea
+                    #bodyTextarea
+                    class="response-studio__textarea"
+                    rows="14"
+                    spellcheck="false"
+                    placeholder="Enter JSON response or template..."
+                    [value]="bodySeedValue()"
+                    (input)="onBodyInput()"
+                  ></textarea>
+                </div>
+
+                <div class="response-studio__editor-footer">
+                  <button type="button" class="response-studio__beautify-btn" (click)="beautifyJson()">
+                    Format JSON
+                  </button>
+                  <span class="response-studio__content-type">application/json</span>
+                </div>
+
+                @if (previewOutput(); as previewResult) {
+                  <div class="response-studio__preview-box">
+                    <div class="response-studio__preview-header">
+                      <span>Rendered output</span>
+                      <button type="button" (click)="previewOutput.set(null)">
+                        <app-icon name="close" [size]="12" />
+                      </button>
+                    </div>
+                    <pre class="response-studio__preview-output">{{ previewResult }}</pre>
+                  </div>
+                }
+                @if (previewWarning(); as warning) {
+                  <div class="response-studio__alert response-studio__alert--warn">{{ warning }}</div>
+                }
+                @if (previewError(); as error) {
+                  <div class="response-studio__alert response-studio__alert--err">{{ error }}</div>
+                }
+              </div>
+            }
+
+            @case ('FILE') {
+              <div class="response-studio__panel-content">
+                <label class="response-studio__label">File path (relative to DATA_DIR)</label>
+                <input
+                  type="text"
+                  class="response-studio__input"
+                  placeholder="mock-data/users.json"
+                  [value]="activeResponse.filePath"
+                  (change)="setStringField('filePath', $event)"
+                />
+                <p class="response-studio__hint">
+                  The file will be read from the filesystem and served directly.
+                </p>
+              </div>
+            }
+
+            @case ('DATABUCKET') {
+              <div class="response-studio__panel-content">
+                <label class="response-studio__label">Select Data Bucket</label>
+                <select
+                  class="response-studio__select"
+                  [value]="activeResponse.databucketId"
+                  (change)="setStringField('databucketId', $event)"
+                >
+                  <option value="" disabled>Select bucket…</option>
+                  @for (bucket of bucketsInput(); track bucket.uuid) {
+                    <option [value]="bucket.uuid">{{ bucket.name }}</option>
+                  }
+                </select>
+                <p class="response-studio__hint">
+                  The data bucket's content will be served directly as the response body.
+                </p>
+              </div>
+            }
+
+            @case ('NONE') {
+              <div class="response-studio__panel-content">
+                <p class="response-studio__hint">Empty body — only status code and headers will be sent.</p>
+              </div>
+            }
           }
         }
-      </div>
 
-      <!-- rules -->
-      <div class="response-editor__section">
-        <p class="response-editor__section-label">Match rules</p>
-        <app-rule-editor
-          [rulesInput]="activeResponse.rules"
-          [operatorInput]="activeResponse.rulesOperator"
-          [bucketsInput]="bucketsInput()"
-          (rulesChange)="setRules($event)"
-          (operatorChange)="setRulesOperator($event)"
-        />
-      </div>
+        @if (activeSubTab() === 'headers') {
+          <div class="response-studio__panel-content">
+            <app-kv-list
+              [itemsInput]="activeResponse.headers"
+              keyPlaceholderInput="Header name"
+              valuePlaceholderInput="Value"
+              (itemsChange)="setHeaders($event)"
+            />
+          </div>
+        }
+
+        @if (activeSubTab() === 'rules') {
+          <div class="response-studio__panel-content">
+            <app-rule-editor
+              [rulesInput]="activeResponse.rules"
+              [operatorInput]="activeResponse.rulesOperator"
+              [bucketsInput]="bucketsInput()"
+              (rulesChange)="setRules($event)"
+              (operatorChange)="setRulesOperator($event)"
+            />
+          </div>
+        }
+
+        @if (activeSubTab() === 'settings') {
+          <div class="response-studio__panel-content">
+            <div class="response-studio__form-group">
+              <label class="response-studio__label">Response Label</label>
+              <input
+                type="text"
+                class="response-studio__input"
+                [value]="activeResponse.label"
+                (change)="setStringField('label', $event)"
+              />
+            </div>
+            <div class="response-studio__form-group">
+              <label class="response-studio__checkbox-label">
+                <input
+                  type="checkbox"
+                  [checked]="activeResponse.defaultResponse"
+                  (change)="toggleDefaultResponse($event)"
+                />
+                <span>Default response for this route</span>
+              </label>
+            </div>
+          </div>
+        }
       </div>
     }
   `,
@@ -185,32 +309,30 @@ import { TemplateHint } from '../../../shared/components/template-hint/template-
 export class ResponseEditor {
   private readonly apiClient = inject(MockApiClient);
   readonly bodyTextarea = viewChild<ElementRef<HTMLTextAreaElement>>('bodyTextarea');
-  /**
-   * Seed state for the uncontrolled body textarea. Keyed on
-   * `uuid:bodyType` because the @switch destroys/recreates the element
-   * when the body type changes back to INLINE.
-   */
-  private seedKey: string | null = null;
-  private bodySeedText = '';
 
   readonly responseInput = input<RouteResponse | null>(null);
   readonly bucketsInput = input<DataBucket[]>([]);
   readonly responseChange = output<RouteResponse>();
   readonly environmentUuidInput = input<string>('');
 
+  readonly activeSubTab = signal<'status-body' | 'headers' | 'rules' | 'settings'>('status-body');
   readonly previewing = signal(false);
   readonly previewOutput = signal<string | null>(null);
   readonly previewWarning = signal<string | null>(null);
   readonly previewError = signal<string | null>(null);
+  readonly bodyContent = signal('');
 
-  /** Seed key the current preview state belongs to (effects run outside render). */
+  private seedKey: string | null = null;
+  private bodySeedText = '';
   private previewedSeedKey: string | null = null;
 
+  readonly lineNumbers = computed(() => {
+    const text = this.bodyContent();
+    const count = (text.match(/\n/g) || []).length + 1;
+    return Array.from({ length: Math.max(count, 14) }, (_, i) => i + 1);
+  });
+
   constructor() {
-    // A preview only makes sense for the response (and body type) it was
-    // rendered for — drop it whenever the active response changes. Effects
-    // run outside render, so the signal writes here are legal (unlike doing
-    // them from bodySeedValue(), which the template calls during render).
     effect(() => {
       const activeResponse = this.responseInput();
       const nextSeedKey = activeResponse ? `${activeResponse.uuid}:${activeResponse.bodyType}` : null;
@@ -218,125 +340,130 @@ export class ResponseEditor {
         this.previewedSeedKey = nextSeedKey;
         this.resetPreview();
       }
+      if (activeResponse) {
+        this.bodyContent.set(activeResponse.body);
+      }
     });
   }
 
-  /**
-   * Pure read of the uncontrolled textarea's seed. The textarea itself is
-   * keyed by the same `uuid:bodyType` (the @switch recreates it), so the
-   * first render after a key change shows the store's body.
-   */
   bodySeedValue(): string {
     const activeResponse = this.responseInput();
-    if (!activeResponse) return this.bodySeedText;
-    const nextSeedKey = `${activeResponse.uuid}:${activeResponse.bodyType}`;
-    if (this.seedKey !== nextSeedKey) {
-      this.seedKey = nextSeedKey;
+    if (!activeResponse) return '';
+    const currentKey = `${activeResponse.uuid}:${activeResponse.bodyType}`;
+    if (this.seedKey !== currentKey) {
+      this.seedKey = currentKey;
       this.bodySeedText = activeResponse.body;
+      this.bodyContent.set(activeResponse.body);
     }
     return this.bodySeedText;
   }
 
-  // --- metadata ----------------------------------------------------------
-
-  setStringField(field: 'label' | 'filePath' | 'databucketId', changeEvent: Event): void {
-    const sourceResponse = this.responseInput();
-    if (!sourceResponse) return;
-    const nextValue = (changeEvent.target as HTMLInputElement | HTMLSelectElement).value;
-    this.responseChange.emit({ ...sourceResponse, [field]: nextValue });
+  onBodyInput(): void {
+    const el = this.bodyTextarea()?.nativeElement;
+    if (el) {
+      this.bodyContent.set(el.value);
+    }
+    this.commitBodyText();
   }
 
-  setStatusField(changeEvent: Event): void {
-    const sourceResponse = this.responseInput();
-    if (!sourceResponse) return;
-    const parsedStatus = Number.parseInt((changeEvent.target as HTMLInputElement).value, 10);
-    if (!Number.isFinite(parsedStatus)) return;
-    const clampedStatus = Math.min(599, Math.max(100, parsedStatus));
-    this.responseChange.emit({ ...sourceResponse, statusCode: clampedStatus });
-  }
-
-  setLatencyField(changeEvent: Event): void {
-    const sourceResponse = this.responseInput();
-    if (!sourceResponse) return;
-    const parsedLatency = Number.parseInt((changeEvent.target as HTMLInputElement).value, 10);
-    const clampedLatency = Number.isFinite(parsedLatency) ? Math.max(0, parsedLatency) : 0;
-    this.responseChange.emit({ ...sourceResponse, latency: clampedLatency });
-  }
-
-  setHeaders(nextHeaders: KeyValue[]): void {
-    const sourceResponse = this.responseInput();
-    if (!sourceResponse) return;
-    this.responseChange.emit({ ...sourceResponse, headers: nextHeaders });
-  }
-
-  setBodyType(changeEvent: Event): void {
-    const sourceResponse = this.responseInput();
-    if (!sourceResponse) return;
-    const nextBodyType = (changeEvent.target as HTMLSelectElement).value as RouteResponse['bodyType'];
-    // Commit whatever is in the live textarea before the switch hides it.
-    const bodyElement = this.bodyTextarea()?.nativeElement;
-    const liveBodyText =
-      sourceResponse.bodyType === 'INLINE' && bodyElement ? bodyElement.value : sourceResponse.body;
-    this.responseChange.emit({ ...sourceResponse, bodyType: nextBodyType, body: liveBodyText });
-    this.resetPreview();
-  }
-
-  setRules(nextRules: RouteRule[]): void {
-    const sourceResponse = this.responseInput();
-    if (!sourceResponse) return;
-    this.responseChange.emit({ ...sourceResponse, rules: nextRules });
-  }
-
-  setRulesOperator(nextOperator: RulesOperator): void {
-    const sourceResponse = this.responseInput();
-    if (!sourceResponse) return;
-    this.responseChange.emit({ ...sourceResponse, rulesOperator: nextOperator });
-  }
-
-  // --- body editing --------------------------------------------------------
-
-  /** Commit the live (uncontrolled) textarea text into the store. */
   commitBodyText(): void {
-    const sourceResponse = this.responseInput();
-    const bodyElement = this.bodyTextarea()?.nativeElement;
-    if (!sourceResponse || !bodyElement) return;
-    this.responseChange.emit({ ...sourceResponse, body: bodyElement.value });
+    const element = this.bodyTextarea()?.nativeElement;
+    if (!element) return;
+    this.setStringField('body', element.value);
   }
 
-  /** Insert a helper snippet at the textarea caret (or end). */
   insertSnippetIntoBody(snippet: string): void {
-    const bodyElement = this.bodyTextarea()?.nativeElement;
-    if (!bodyElement) return;
-    const insertPosition = bodyElement.selectionStart ?? bodyElement.value.length;
-    const endPosition = bodyElement.selectionEnd ?? insertPosition;
-    const currentText = bodyElement.value;
-    const nextText = currentText.slice(0, insertPosition) + snippet + currentText.slice(endPosition);
-    bodyElement.value = nextText;
-    bodyElement.focus();
-    bodyElement.selectionStart = insertPosition;
-    bodyElement.selectionEnd = insertPosition + snippet.length;
-    // Programmatic .value sets don't fire events — commit manually.
-    bodyElement.dispatchEvent(new Event('input'));
+    const element = this.bodyTextarea()?.nativeElement;
+    if (!element) return;
+    const start = element.selectionStart;
+    const end = element.selectionEnd;
+    const currentText = element.value;
+    element.value = currentText.slice(0, start) + snippet + currentText.slice(end);
+    element.selectionStart = element.selectionEnd = start + snippet.length;
+    element.focus();
+    this.onBodyInput();
   }
 
-  /** Call the preview-template endpoint with the live textarea content. */
-  async previewBody(): Promise<void> {
-    const sourceResponse = this.responseInput();
-    if (!sourceResponse || this.previewing()) return;
-    const bodyElement = this.bodyTextarea()?.nativeElement;
-    const templateText = bodyElement?.value ?? sourceResponse.body;
-    this.previewing.set(true);
-    this.previewOutput.set(null);
-    this.previewWarning.set(null);
-    this.previewError.set(null);
+  beautifyJson(): void {
+    const element = this.bodyTextarea()?.nativeElement;
+    if (!element) return;
     try {
-      const previewResult = await this.apiClient.previewTemplate(this.environmentUuidInput(), templateText);
-      this.previewOutput.set(previewResult.output);
-      this.previewWarning.set(
-        previewResult.warnings.length > 0 ? previewResult.warnings.join(' · ') : null,
-      );
+      const parsed = JSON.parse(element.value);
+      element.value = JSON.stringify(parsed, null, 2);
+      this.onBodyInput();
+    } catch {
+      // If Handlebars or invalid JSON, ignore
+    }
+  }
+
+  setBodyTypeDirect(bodyType: 'INLINE' | 'FILE' | 'DATABUCKET' | 'NONE'): void {
+    const activeResponse = this.responseInput();
+    if (!activeResponse) return;
+    this.responseChange.emit({ ...activeResponse, bodyType });
+  }
+
+  setStatusField(event: Event): void {
+    const activeResponse = this.responseInput();
+    if (!activeResponse) return;
+    const val = Number((event.target as HTMLSelectElement).value) || 200;
+    this.responseChange.emit({ ...activeResponse, statusCode: val });
+  }
+
+  setLatencyField(event: Event): void {
+    const activeResponse = this.responseInput();
+    if (!activeResponse) return;
+    const val = Math.max(0, Number((event.target as HTMLInputElement).value) || 0);
+    this.responseChange.emit({ ...activeResponse, latency: val });
+  }
+
+  setStringField(field: 'label' | 'filePath' | 'databucketId' | 'body', valueOrEvent: Event | string): void {
+    const activeResponse = this.responseInput();
+    if (!activeResponse) return;
+    const rawValue = typeof valueOrEvent === 'string' ? valueOrEvent : (valueOrEvent.target as HTMLInputElement).value;
+    this.responseChange.emit({ ...activeResponse, [field]: rawValue });
+  }
+
+  setHeaders(headers: { key: string; value: string }[]): void {
+    const activeResponse = this.responseInput();
+    if (!activeResponse) return;
+    this.responseChange.emit({ ...activeResponse, headers });
+  }
+
+  setRules(rules: RouteRule[]): void {
+    const activeResponse = this.responseInput();
+    if (!activeResponse) return;
+    this.responseChange.emit({ ...activeResponse, rules });
+  }
+
+  setRulesOperator(rulesOperator: RulesOperator): void {
+    const activeResponse = this.responseInput();
+    if (!activeResponse) return;
+    this.responseChange.emit({ ...activeResponse, rulesOperator });
+  }
+
+  toggleDefaultResponse(event: Event): void {
+    const activeResponse = this.responseInput();
+    if (!activeResponse) return;
+    const isChecked = (event.target as HTMLInputElement).checked;
+    this.responseChange.emit({ ...activeResponse, defaultResponse: isChecked });
+  }
+
+  async previewBody(): Promise<void> {
+    const environmentUuid = this.environmentUuidInput();
+    const element = this.bodyTextarea()?.nativeElement;
+    const template = element?.value ?? this.responseInput()?.body ?? '';
+    if (!environmentUuid) {
+      this.previewError.set('Select an environment to preview templates');
+      return;
+    }
+    this.previewing.set(true);
+    this.resetPreview();
+    try {
+      const result = await this.apiClient.previewTemplate(environmentUuid, template);
+      this.previewOutput.set(result.output);
+      this.previewWarning.set(result.warnings.length > 0 ? result.warnings.join('; ') : null);
     } catch (caught) {
-      this.previewError.set(caught instanceof Error ? caught.message : 'Preview failed');
+      this.previewError.set(caught instanceof Error ? caught.message : 'Preview request failed');
     } finally {
       this.previewing.set(false);
     }

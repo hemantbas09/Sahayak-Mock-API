@@ -1,21 +1,22 @@
 import { Component, input, output } from '@angular/core';
 import { DataBucket } from '../../../core/types';
 import { createDataBucket } from '../../../core/defaults';
+import { IconComponent } from '../../../shared/components/icon/icon.component';
 
 /**
- * F11 — data bucket list. Block: .data-bucket-list
- *
- * Controlled: renders `bucketsInput` and emits the next full array on
- * structural mutation; field edits come back via `bucketChange` with the
- * mutated clone.
+ * Data bucket list component. Block: .data-bucket-list
  */
 @Component({
   selector: 'app-data-bucket-list',
+  imports: [IconComponent],
   template: `
     <div class="data-bucket-list">
       <header class="data-bucket-list__head">
         <h4 class="data-bucket-list__heading">Data buckets</h4>
-        <button class="data-bucket-list__add" type="button" (click)="addBucket()">+ Add bucket</button>
+        <button class="data-bucket-list__add" type="button" (click)="addBucket()">
+          <app-icon name="plus" [size]="12" />
+          <span>Add bucket</span>
+        </button>
       </header>
 
       @for (bucketRow of bucketsInput(); track bucketRow.uuid) {
@@ -30,19 +31,22 @@ import { createDataBucket } from '../../../core/defaults';
           <span class="data-bucket-list__kind">{{ bucketKindLabel(bucketRow.content) }}</span>
           <span class="data-bucket-list__size">{{ bucketRow.content.length }} chars</span>
           <span class="data-bucket-list__row-actions" (click)="$event.stopPropagation()">
-            <button type="button" title="Duplicate bucket" (click)="duplicateBucket(bucketRow)">⧉</button>
+            <button type="button" title="Duplicate bucket" (click)="duplicateBucket(bucketRow)">
+              <app-icon name="copy" [size]="12" />
+            </button>
             <button
               type="button"
               title="Delete bucket"
               class="data-bucket-list__delete"
               (click)="deleteBucket(bucketRow)"
-            >🗑</button>
+            >
+              <app-icon name="trash" [size]="12" />
+            </button>
           </span>
         </div>
       } @empty {
         <p class="data-bucket-list__empty">
-          No buckets yet. Buckets power CRUD routes and the
-          <code>data "bucket" "path"</code> template helper (🧩 for the exact syntax).
+          No buckets configured. Create a bucket to power mock CRUD stores or reference with <code>data "bucket" "path"</code>.
         </p>
       }
     </div>
@@ -78,7 +82,7 @@ export class DataBucketList {
     const referenceCount = this.referenceCountFor(bucketRow.uuid);
     const warningText =
       referenceCount > 0
-        ? `Bucket "${bucketRow.name}" is referenced by ${referenceCount} response(s)/route(s). They will warn at request time. Delete anyway?`
+        ? `Bucket "${bucketRow.name}" is referenced by ${referenceCount} response(s)/route(s). Delete anyway?`
         : `Delete bucket "${bucketRow.name}"?`;
     if (!window.confirm(warningText)) return;
     this.bucketsChange.emit(this.bucketsInput().filter((otherBucket) => otherBucket.uuid !== bucketRow.uuid));

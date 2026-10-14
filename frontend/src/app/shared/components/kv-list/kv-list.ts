@@ -1,18 +1,13 @@
 import { Component, input, output } from '@angular/core';
 import { KeyValue } from '../../../core/types';
+import { IconComponent } from '../icon/icon.component';
 
 /**
- * F3 — key/value row editor (headers, env defaults). Block: .kv-list
- *
- * Controlled component: renders `itemsInput` and emits the next full array
- * on every mutation. The parent binds both sides:
- *   [itemsInput]="headers" (itemsChange)="onHeaders($event)"
- *
- * Rows are tracked by index (KeyValue has no id; the editor list is stable
- * enough that index tracking keeps focus intact via uncontrolled [value]).
+ * Key/value row editor (headers, env defaults). Block: .kv-list
  */
 @Component({
   selector: 'app-kv-list',
+  imports: [IconComponent],
   template: `
     <div class="kv-list">
       @for (row of itemsInput(); track $index; let rowIndex = $index) {
@@ -31,12 +26,17 @@ import { KeyValue } from '../../../core/types';
             [value]="row.value"
             (change)="updateField(rowIndex, 'value', $event)"
           />
-          <button class="kv-list__remove" type="button" title="Remove row" aria-label="Remove row" (click)="removeRow(rowIndex)">×</button>
+          <button class="kv-list__remove" type="button" title="Remove row" aria-label="Remove row" (click)="removeRow(rowIndex)">
+            <app-icon name="close" [size]="12" />
+          </button>
         </div>
       } @empty {
-        <p class="kv-list__empty">No rows yet.</p>
+        <p class="kv-list__empty">No headers configured.</p>
       }
-      <button class="kv-list__add" type="button" (click)="addRow()">+ Add row</button>
+      <button class="kv-list__add" type="button" (click)="addRow()">
+        <app-icon name="plus" [size]="12" />
+        <span>Add header</span>
+      </button>
     </div>
   `,
   styleUrl: './kv-list.scss',

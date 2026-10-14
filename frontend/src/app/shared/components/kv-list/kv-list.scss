@@ -3,66 +3,74 @@
 .kv-list {
   display: flex;
   flex-direction: column;
-  gap: $space-2;
+  gap: var(--s2);
 
   &__row {
     display: grid;
     grid-template-columns: 1fr 2fr auto;
-    gap: $space-2;
+    gap: var(--s2);
     align-items: center;
   }
 
   &__key,
   &__value {
-    padding: $space-2;
-    background: $color-bg;
-    border: 1px solid $color-border;
-    border-radius: $radius-sm;
-    color: $color-text;
-    font-size: $font-size-sm;
-    font-family: $font-mono;
+    height: 28px;
+    padding: 0 var(--s2);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    color: var(--text);
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
 
     &:focus {
       outline: none;
-      border-color: $color-primary;
+      border-color: var(--accent);
     }
   }
 
   &__remove {
     width: 28px;
     height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: transparent;
-    border: 1px solid $color-border;
-    border-radius: $radius-sm;
-    color: $color-text-muted;
-    font-size: $font-size-md;
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    color: var(--text-muted);
     cursor: pointer;
 
     &:hover {
-      border-color: $color-danger;
-      color: $color-danger;
+      border-color: var(--error);
+      color: var(--error);
+      background: rgba(239, 68, 68, 0.1);
     }
   }
 
   &__empty {
     margin: 0;
-    color: $color-text-muted;
-    font-size: $font-size-sm;
+    color: var(--text-muted);
+    font-size: var(--text-xs);
   }
 
   &__add {
     align-self: flex-start;
-    padding: $space-2 $space-3;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s1);
+    padding: 0 var(--s3);
     background: transparent;
-    border: 1px dashed $color-border;
-    border-radius: $radius-sm;
-    color: $color-text-muted;
-    font-size: $font-size-sm;
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    color: var(--text-muted);
+    font-size: var(--text-xs);
     cursor: pointer;
 
     &:hover {
-      border-color: $color-primary;
-      color: $color-primary;
+      border-color: var(--accent);
+      color: var(--accent);
     }
   }
 }

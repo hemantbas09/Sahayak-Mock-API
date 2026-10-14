@@ -4,11 +4,8 @@ import { KvList } from '../../../shared/components/kv-list/kv-list';
 import { Modal } from '../../../shared/components/modal/modal';
 
 /**
- * F12 — environment settings modal (name, port, prefix, headers, proxy, TLS).
+ * Environment settings modal (name, port, prefix, headers, proxy, TLS).
  * Block: .env-settings
- *
- * Controlled: renders `environmentInput` and emits the mutated clone on
- * every field change. The parent applies it through the store.
  */
 @Component({
   selector: 'app-env-settings',
@@ -55,7 +52,7 @@ import { Modal } from '../../../shared/components/modal/modal';
             <app-kv-list
               [itemsInput]="currentSettings.headers"
               keyPlaceholderInput="Header name"
-              valuePlaceholderInput="Value (templating ok)"
+              valuePlaceholderInput="Value"
               (itemsChange)="setHeaders($event)"
             />
           </div>
@@ -68,7 +65,7 @@ import { Modal } from '../../../shared/components/modal/modal';
                 [checked]="currentSettings.proxyMode"
                 (change)="setProxyMode($event)"
               />
-              <span>Forward unmatched requests to a real server</span>
+              <span>Forward unmatched requests to an upstream host</span>
             </label>
             @if (currentSettings.proxyMode) {
               <div class="env-settings__row">
@@ -77,7 +74,7 @@ import { Modal } from '../../../shared/components/modal/modal';
                   <input
                     type="text"
                     class="env-settings__input"
-                    placeholder="https://api.example.com"
+                    placeholder="https://api.upstream-service.com"
                     [value]="currentSettings.proxyHost"
                     (change)="setStringField('proxyHost', $event)"
                   />
@@ -102,7 +99,7 @@ import { Modal } from '../../../shared/components/modal/modal';
                 [checked]="currentSettings.tlsOptions.enabled"
                 (change)="setTlsEnabled($event)"
               />
-              <span>Serve the mock over HTTPS</span>
+              <span>Serve over HTTPS (TLS)</span>
             </label>
             @if (currentSettings.tlsOptions.enabled) {
               <div class="env-settings__row">

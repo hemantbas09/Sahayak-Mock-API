@@ -1,7 +1,7 @@
 <main class="login-screen">
   <form class="login-screen__card" (ngSubmit)="submitLogin()">
     <h1 class="login-screen__title">Sahayak</h1>
-    <p class="login-screen__subtitle">Team Mock API Platform</p>
+    <p class="login-screen__subtitle">API Mock Server</p>
 
     @if (loginError(); as errorMessage) {
       <p class="login-screen__error" role="alert">{{ errorMessage }}</p>
@@ -38,7 +38,7 @@
     </button>
 
     <p class="login-screen__hint">
-      Seeded admin: <code>admin@example.com</code> / <code>admin1234</code>
+      Default admin: <code>admin&#64;sahayak.local</code> / <code>admin1234</code>
     </p>
   </form>
 </main>

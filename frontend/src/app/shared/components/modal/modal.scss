@@ -8,50 +8,53 @@
   align-items: flex-start;
   justify-content: center;
   overflow-y: auto;
-  padding: $space-8 $space-6;
-  background: rgba(15, 23, 42, 0.7);
+  padding: var(--s6) var(--s4);
+  background: rgba(0, 0, 0, 0.65);
 
   &__panel {
-    width: min(680px, 100%);
-    background: $color-surface;
-    border: 1px solid $color-border;
-    border-radius: $radius-md;
-    box-shadow: $shadow-lg;
+    width: min(640px, 100%);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-lg);
   }
 
   &__header {
     display: flex;
     align-items: center;
     justify-content: space-between;
-    padding: $space-3 $space-4;
-    border-bottom: 1px solid $color-border;
+    padding: var(--s2) var(--s3);
+    border-bottom: 1px solid var(--border);
   }
 
   &__title {
     margin: 0;
-    font-size: $font-size-md;
-    letter-spacing: -0.01em;
+    font-size: var(--text-md);
+    font-weight: 600;
+    color: var(--text);
   }
 
   &__close {
-    width: 28px;
-    height: 28px;
+    width: 24px;
+    height: 24px;
     padding: 0;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     background: transparent;
-    border: none;
-    border-radius: $radius-sm;
-    color: $color-text-muted;
-    font-size: 16px;
-    line-height: 1;
+    border: 1px solid transparent;
+    border-radius: var(--r);
+    color: var(--text-muted);
     cursor: pointer;
 
     &:hover {
-      background: $color-surface-2;
-      color: $color-text;
+      background: var(--surface-hover);
+      border-color: var(--border);
+      color: var(--text);
     }
   }
 
   &__body {
-    padding: $space-4;
+    padding: var(--s4);
   }
 }

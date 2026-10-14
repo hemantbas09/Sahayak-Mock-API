@@ -2,23 +2,20 @@ import { Component, inject, input, output, signal } from '@angular/core';
 import { MockApiClient } from '../../../core/mock-api.client';
 import { downloadJson, readFileAsText } from '../../../core/utils';
 import { Modal } from '../../../shared/components/modal/modal';
+import { IconComponent } from '../../../shared/components/icon/icon.component';
 
 /**
- * F15 — import/export modal. Block: .import-export
- *
- * Import: pick a Mockoon JSON or OpenAPI v3 file → local preview (name/port/
- * route counts when the file parses client-side) → POST /api/import → result.
- * Export: download the current environment as a Mockoon JSON file.
+ * Import/export modal. Block: .import-export
  */
 @Component({
   selector: 'app-import-export',
-  imports: [Modal],
+  imports: [Modal, IconComponent],
   template: `
-    <app-modal title="Import / export" (closed)="closed.emit()">
+    <app-modal title="Import / Export" (closed)="closed.emit()">
       <div class="import-export">
-        <!-- ------------------------------------------------------ import -->
+        <!-- Import -->
         <section class="import-export__section">
-          <p class="import-export__section-label">Import a Mockoon or OpenAPI v3 file</p>
+          <p class="import-export__section-label">Import file (Mockoon JSON or OpenAPI v3)</p>
 
           @if (selectedFile(); as pickedFile) {
             <div class="import-export__file-info">
@@ -40,7 +37,7 @@ import { Modal } from '../../../shared/components/modal/modal';
               </div>
             } @else {
               <p class="import-export__hint">
-                File content will be parsed server-side (OpenAPI v3 supported).
+                File content will be parsed server-side.
               </p>
             }
 
@@ -50,7 +47,7 @@ import { Modal } from '../../../shared/components/modal/modal';
               [disabled]="importing()"
               (click)="runImport(pickedFile)"
             >
-              {{ importing() ? 'Importing…' : '⇪ Import' }}
+              {{ importing() ? 'Importing…' : 'Import' }}
             </button>
 
             @if (importError(); as importErrorMessage) {
@@ -60,9 +57,10 @@ import { Modal } from '../../../shared/components/modal/modal';
               <div class="import-export__result">
                 @for (importedEnv of importedEnvs; track importedEnv.uuid) {
                   <p class="import-export__result-row">
-                    ✓ {{ importedEnv.name }}
+                    <app-icon name="check" [size]="12" />
+                    <span>{{ importedEnv.name }}</span>
                     @if (importedEnv.portConflict) {
-                      <span class="import-export__conflict-note">⚠ port already in use — listener stays off</span>
+                      <span class="import-export__conflict-note">(Port conflict — listener stays paused)</span>
                     }
                   </p>
                 }
@@ -76,9 +74,9 @@ import { Modal } from '../../../shared/components/modal/modal';
           }
         </section>
 
-        <!-- ------------------------------------------------------ export -->
+        <!-- Export -->
         <section class="import-export__section">
-          <p class="import-export__section-label">Export the current environment</p>
+          <p class="import-export__section-label">Export environment</p>
           <div class="import-export__row">
             <button
               class="import-export__btn"
@@ -86,10 +84,10 @@ import { Modal } from '../../../shared/components/modal/modal';
               [disabled]="exporting()"
               (click)="runExport()"
             >
-              {{ exporting() ? 'Preparing…' : '⬇ Download Mockoon JSON' }}
+              {{ exporting() ? 'Preparing…' : 'Download JSON' }}
             </button>
             <span class="import-export__hint">
-              Round-trips with Mockoon desktop (Sahayak-only fields stripped).
+              Export format is compatible with standard Mockoon environments.
             </span>
           </div>
           @if (exportError(); as exportErrorMessage) {
@@ -104,11 +102,9 @@ import { Modal } from '../../../shared/components/modal/modal';
 export class ImportExport {
   private readonly apiClient = inject(MockApiClient);
 
-  /** The environment to export (the one the shell has selected). */
   readonly environmentUuidInput = input<string>('');
   readonly environmentNameInput = input('environment');
   readonly closed = output<void>();
-  /** Emits after a successful import so the shell can refresh its list. */
   readonly imported = output<void>();
 
   readonly selectedFile = signal<File | null>(null);
@@ -145,7 +141,6 @@ export class ImportExport {
     try {
       const importResponse = await this.apiClient.importFile(uploadFile);
       this.importResult.set(importResponse.imported);
-      // Tell the shell to refresh its environment list.
       this.imported.emit();
     } catch (caught) {
       this.importError.set(caught instanceof Error ? caught.message : 'Import failed');
@@ -180,7 +175,6 @@ export class ImportExport {
     try {
       const fileText = await readFileAsText(uploadFile);
       const parsedFile: unknown = JSON.parse(fileText);
-      // Mockoon collection: { application: 'mockoon', data: Environment[] }
       if (parsedFile && typeof parsedFile === 'object' && 'data' in (parsedFile as Record<string, unknown>)) {
         const dataField = (parsedFile as Record<string, unknown>)['data'];
         if (Array.isArray(dataField)) {
@@ -199,9 +193,8 @@ export class ImportExport {
           );
         }
       }
-      // OpenAPI / single-env shapes: server parses; no client-side preview.
     } catch {
-      // Not parseable client-side — the server will try (OpenAPI v3, etc.).
+      // Not parseable client-side
     }
   }
 }
@@ -213,7 +206,6 @@ interface MockoonPreviewEnv {
   bucketCount: number;
 }
 
-/** The server reports only these three fields per imported environment. */
 interface ImportedEnvRow {
   uuid: string;
   name: string;

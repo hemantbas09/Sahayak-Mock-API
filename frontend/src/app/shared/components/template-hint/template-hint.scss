@@ -4,34 +4,34 @@
   display: flex;
   flex-wrap: wrap;
   align-items: center;
-  gap: $space-1;
-  padding: $space-2;
-  background: rgba(56, 189, 248, 0.06);
-  border: 1px dashed $color-border;
-  border-radius: $radius-sm;
+  gap: var(--s1);
+  padding: var(--s2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
 
   &__label {
-    color: $color-text-muted;
-    font-size: $font-size-sm;
+    color: var(--text-muted);
+    font-size: var(--text-xs);
   }
 
   &__chip {
-    padding: 2px $space-2;
-    background: $color-surface-2;
-    border: 1px solid $color-border;
-    border-radius: $radius-pill;
-    color: $color-primary;
-    font-family: $font-mono;
-    font-size: 11px;
+    padding: 1px var(--s2);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
     cursor: pointer;
 
     &:hover {
-      border-color: $color-primary;
+      border-color: var(--accent);
     }
   }
 
   &__more {
-    color: $color-text-muted;
-    font-size: 11px;
+    color: var(--text-muted);
+    font-size: var(--text-xs);
   }
 }

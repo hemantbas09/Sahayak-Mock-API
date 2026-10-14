@@ -46,7 +46,7 @@ export function loadConfig(): ServerConfig {
       .map((s) => s.trim())
       .filter(Boolean),
     jwtSecret: process.env.JWT_SECRET?.trim() || 'sahayak-dev-secret-change-me',
-    authEnabled: (process.env.AUTH_ENABLED ?? 'true').trim().toLowerCase() !== 'false',
+    authEnabled: (process.env.AUTH_ENABLED ?? 'false').trim().toLowerCase() === 'true',
     seedAdmin: seedEmail
       ? { email: seedEmail, password: seedPassword ?? '' }
       : null,

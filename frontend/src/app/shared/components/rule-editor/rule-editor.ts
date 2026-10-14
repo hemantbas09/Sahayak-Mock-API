@@ -3,19 +3,14 @@ import { RULE_OPERATOR_OPTIONS, RULE_TARGET_OPTIONS, VALUELESS_OPERATORS } from 
 import { DataBucket, RouteRule, RulesOperator } from '../../../core/types';
 import { newUuid } from '../../../core/utils';
 import { SelectValueSync } from '../../directives/select-value-sync.directive';
+import { IconComponent } from '../icon/icon.component';
 
 /**
- * F4 — conditional-response rule editor. Block: .rule-editor
- *
- * Controlled component: renders `rulesInput` (+ AND/OR toggle from
- * `operatorInput`) and emits the next full rule list / operator on every
- * mutation. Parent binds:
- *   [rulesInput]="rules" (rulesChange)="onRules($event)"
- *   [operatorInput]="rulesOperator" (operatorChange)="onOperator($event)"
+ * Conditional-response rule editor. Block: .rule-editor
  */
 @Component({
   selector: 'app-rule-editor',
-  imports: [SelectValueSync],
+  imports: [SelectValueSync, IconComponent],
   template: `
     <div class="rule-editor">
       @for (ruleRow of rulesInput(); track ruleRow.uuid) {
@@ -42,7 +37,6 @@ import { SelectValueSync } from '../../directives/select-value-sync.directive';
             >
               <option value="" disabled>Select bucket…</option>
               @for (bucket of bucketsInput(); track bucket.uuid) {
-                <!-- Engine resolves the bucket by uuid (runtime map key). -->
                 <option [value]="bucket.uuid">{{ bucket.name }}</option>
               }
             </select>
@@ -94,19 +88,24 @@ import { SelectValueSync } from '../../directives/select-value-sync.directive';
             <span>invert</span>
           </label>
 
-          <button class="rule-editor__remove" type="button" title="Remove rule" (click)="removeRule(ruleRow.uuid)">×</button>
+          <button class="rule-editor__remove" type="button" title="Remove rule" (click)="removeRule(ruleRow.uuid)">
+            <app-icon name="close" [size]="12" />
+          </button>
         </div>
       } @empty {
-        <p class="rule-editor__empty">No rules — without rules, only the default response can match.</p>
+        <p class="rule-editor__empty">No rules configured — default response will always be served.</p>
       }
 
       <div class="rule-editor__footer">
-        <button class="rule-editor__add" type="button" (click)="addRule()">+ Add rule</button>
+        <button class="rule-editor__add" type="button" (click)="addRule()">
+          <app-icon name="plus" [size]="12" />
+          <span>Add rule</span>
+        </button>
         <label class="rule-editor__operator-toggle">
-          Match rules with
+          <span>Match operator:</span>
           <select [value]="operatorInput()" (change)="operatorSelected($event)" aria-label="Rules operator">
-            <option value="AND">ALL (AND)</option>
-            <option value="OR">ANY (OR)</option>
+            <option value="AND">AND (All rules)</option>
+            <option value="OR">OR (Any rule)</option>
           </select>
         </label>
       </div>
@@ -124,7 +123,6 @@ export class RuleEditor {
   readonly targetOptions = RULE_TARGET_OPTIONS;
   readonly operatorOptions = RULE_OPERATOR_OPTIONS;
 
-  /** Operators that never take an expected value. */
   valueless(operatorId: string): boolean {
     return VALUELESS_OPERATORS.has(operatorId);
   }

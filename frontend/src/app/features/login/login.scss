@@ -4,90 +4,98 @@
   display: grid;
   place-items: center;
   min-height: 100vh;
-  padding: $space-6;
+  padding: var(--s4);
+  background: var(--bg);
 
   &__card {
-    width: min(400px, 100%);
+    width: min(360px, 100%);
     display: flex;
     flex-direction: column;
-    gap: $space-4;
-    padding: $space-8;
-    background: $color-surface;
-    border: 1px solid $color-border;
-    border-radius: $radius-md;
-    box-shadow: $shadow-lg;
+    gap: var(--s3);
+    padding: var(--s4);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
   }
 
   &__title {
     margin: 0;
-    font-size: 28px;
-    letter-spacing: -0.02em;
+    font-size: var(--text-lg);
+    font-weight: 600;
+    color: var(--text);
   }
 
   &__subtitle {
-    margin: -#{$space-3} 0 0;
-    color: $color-text-muted;
-    font-size: $font-size-sm;
+    margin: calc(-1 * var(--s2)) 0 0;
+    color: var(--text-muted);
+    font-size: var(--text-xs);
   }
 
   &__error {
     margin: 0;
-    padding: $space-2 $space-3;
-    background: rgba(248, 113, 113, 0.12);
-    border: 1px solid $color-danger;
-    border-radius: $radius-sm;
-    color: $color-danger;
-    font-size: $font-size-sm;
+    padding: var(--s2);
+    background: rgba(239, 68, 68, 0.12);
+    border: 1px solid var(--error);
+    border-radius: var(--r);
+    color: var(--error);
+    font-size: var(--text-xs);
   }
 
   &__field {
     display: flex;
     flex-direction: column;
-    gap: $space-1;
+    gap: var(--s1);
   }
 
   &__label {
-    color: $color-text-muted;
-    font-size: $font-size-sm;
+    color: var(--text-muted);
+    font-size: var(--text-xs);
   }
 
   &__input {
-    padding: $space-2 $space-3;
-    background: $color-bg;
-    border: 1px solid $color-border;
-    border-radius: $radius-sm;
-    color: $color-text;
-    font-size: $font-size-md;
+    height: 30px;
+    padding: 0 var(--s2);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    color: var(--text);
+    font-size: var(--text-sm);
 
     &:focus {
       outline: none;
-      border-color: $color-primary;
+      border-color: var(--accent);
     }
   }
 
   &__submit {
-    padding: $space-3;
-    background: $color-primary;
-    border: none;
-    border-radius: $radius-sm;
-    color: $color-primary-contrast;
-    font-size: $font-size-md;
+    height: 30px;
+    padding: 0 var(--s3);
+    background: var(--accent);
+    border: 1px solid var(--accent);
+    border-radius: var(--r);
+    color: #ffffff;
+    font-size: var(--text-sm);
     font-weight: 600;
     cursor: pointer;
 
     &:hover:not(:disabled) {
-      background: $color-primary-hover;
+      background: #2563eb;
     }
 
     &:disabled {
-      opacity: 0.6;
+      opacity: 0.5;
       cursor: wait;
     }
   }
 
   &__hint {
     margin: 0;
-    color: $color-text-muted;
-    font-size: $font-size-sm;
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+
+    code {
+      font-family: var(--font-mono);
+      color: var(--text);
+    }
   }
 }
