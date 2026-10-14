@@ -38,7 +38,7 @@ export function validatePayload(payload: unknown, schemaDef: string): Validation
       } catch {
         return {
           valid: false,
-          errors: ['Request payload is not valid JSON'],
+          errors: ['JSON is not formatted properly, please format your message'],
         };
       }
     }
@@ -78,10 +78,27 @@ export const DEFAULT_PAYLOAD_ERROR_BODY = JSON.stringify(
   2
 );
 
+export const DEFAULT_MALFORMED_JSON_ERROR_BODY = JSON.stringify(
+  {
+    success: false,
+    message: 'JSON is not formatted properly, please format your message',
+    code: '0',
+  },
+  null,
+  2
+);
+
 /**
  * Formats the error body response using the validation errors.
  */
 export function renderValidationErrorBody(template: string, errors: string[]): string {
+  const isMalformed = errors.some(
+    (e) => e.toLowerCase().includes('not formatted properly') || e.toLowerCase().includes('not valid json')
+  );
+  if (isMalformed) {
+    return DEFAULT_MALFORMED_JSON_ERROR_BODY;
+  }
+
   const errorText = errors.join(', ');
   const defaultBody = DEFAULT_PAYLOAD_ERROR_BODY;
 

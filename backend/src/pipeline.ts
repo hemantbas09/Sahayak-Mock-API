@@ -116,6 +116,61 @@ export async function handleMockRequest(
     requestNumber,
   };
 
+  // --- malformed JSON validation for POST/PUT/PATCH requests ---
+  const ct = (contentType ?? '').toLowerCase();
+  const trimmedBody = (raw.rawBody || '').trim();
+  const shouldBeJson = ct.includes('application/json') || trimmedBody.startsWith('{') || trimmedBody.startsWith('[');
+
+  let isMalformedJson = false;
+  if (shouldBeJson && trimmedBody.length > 0) {
+    try {
+      JSON.parse(trimmedBody);
+    } catch {
+      isMalformedJson = true;
+    }
+  }
+
+  if (isMalformedJson && ['post', 'put', 'patch'].includes(raw.method.toLowerCase())) {
+    const errorBody = JSON.stringify(
+      {
+        success: false,
+        message: 'JSON is not formatted properly, please format your message',
+        code: '0',
+      },
+      null,
+      2
+    );
+    const headers: Record<string, string> = {
+      'Access-Control-Allow-Origin': '*',
+      'Access-Control-Allow-Methods': '*',
+      'Access-Control-Allow-Headers': '*',
+    };
+    for (const h of env.headers ?? []) {
+      headers[h.key.toLowerCase()] = h.value;
+    }
+    headers['content-type'] = 'application/json';
+
+    const matchedResponse = match?.route.responses.find((r) => r.defaultResponse) ?? match?.route.responses[0];
+    const statusCode =
+      matchedResponse?.payloadValidation?.enabled && matchedResponse.payloadValidation.errorStatus
+        ? matchedResponse.payloadValidation.errorStatus
+        : 400;
+
+    const resp: EngineResponse = {
+      statusCode,
+      headers,
+      body: errorBody,
+      fileContentType: null,
+      latencyMs: 0,
+      warnings: ['JSON is not formatted properly, please format your message'],
+      proxied: false,
+      routeUuid: match ? match.route.uuid : null,
+    };
+
+    await logResult(env.uuid, raw, req, resp, Date.now() - startedAt, deps.logs);
+    return resp;
+  }
+
   // --- route-level proxy ---
   if (match && match.route.proxyHost) {
     const target = buildProxyTarget(env, match.route, true, req, rawPath);

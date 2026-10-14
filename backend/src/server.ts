@@ -67,6 +67,17 @@ async function main() {
   const app = express();
   app.disable('x-powered-by');
   app.use(express.json({ limit: '50mb' }));
+  app.use((err: unknown, _req: express.Request, res: express.Response, next: express.NextFunction) => {
+    if (err instanceof SyntaxError && 'body' in (err as Record<string, unknown>)) {
+      res.status(400).json({
+        success: false,
+        message: 'JSON is not formatted properly, please format your message',
+        code: '0',
+      });
+      return;
+    }
+    next(err);
+  });
 
   const apiDeps = {
     store,
