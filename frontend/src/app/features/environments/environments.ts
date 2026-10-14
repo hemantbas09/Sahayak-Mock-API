@@ -1,4 +1,4 @@
-import { ChangeDetectorRef, Component, OnInit, computed, inject, signal } from '@angular/core';
+import { ChangeDetectorRef, Component, HostListener, OnInit, computed, inject, signal } from '@angular/core';
 import { AuthStore } from '../../core/auth.store';
 import { EnvironmentsStore } from '../../core/environments.store';
 import { MockApiClient } from '../../core/mock-api.client';
@@ -63,6 +63,11 @@ export class Environments implements OnInit {
   readonly newEnvPrefix = signal('');
   readonly newEnvPort = signal(3000);
   readonly prefixManuallyEdited = signal(false);
+
+  // --- Card dropdown & Project deletion state ---
+  readonly activeCardMenuUuid = signal<string | null>(null);
+  readonly projectToDelete = signal<{ uuid: string; name: string; port: number; routeCount: number } | null>(null);
+  readonly isDeletingProject = signal<boolean>(false);
 
   // --- Store signals ---
   readonly list = this.envStore.list;
@@ -295,11 +300,66 @@ export class Environments implements OnInit {
     this.openCreateEnvironmentModal();
   }
 
-  deleteEnvironmentRow(summary: EnvironmentSummary, event?: MouseEvent): void {
-    event?.stopPropagation();
-    if (window.confirm(`Delete environment "${summary.name}"? This cannot be undone.`)) {
-      void this.envStore.deleteEnvironment(summary.uuid);
+  @HostListener('document:click')
+  onDocumentClick(): void {
+    if (this.activeCardMenuUuid()) {
+      this.closeCardMenu();
     }
+  }
+
+  toggleCardMenu(uuid: string, event?: MouseEvent): void {
+    event?.stopPropagation();
+    this.activeCardMenuUuid.update((cur) => (cur === uuid ? null : uuid));
+  }
+
+  closeCardMenu(): void {
+    this.activeCardMenuUuid.set(null);
+  }
+
+  promptDeleteProject(
+    target: { uuid: string; name: string; port: number; routeCount?: number; routes?: unknown[] },
+    event?: MouseEvent
+  ): void {
+    event?.stopPropagation();
+    this.closeCardMenu();
+    const count = typeof target.routeCount === 'number' ? target.routeCount : (target.routes?.length ?? 0);
+    this.projectToDelete.set({
+      uuid: target.uuid,
+      name: target.name,
+      port: target.port,
+      routeCount: count,
+    });
+  }
+
+  promptDeleteCurrentProject(): void {
+    const cur = this.current();
+    if (!cur) return;
+    this.promptDeleteProject(cur);
+  }
+
+  cancelDeleteProject(): void {
+    if (this.isDeletingProject()) return;
+    this.projectToDelete.set(null);
+  }
+
+  async confirmDeleteProject(): Promise<void> {
+    const target = this.projectToDelete();
+    if (!target) return;
+    this.isDeletingProject.set(true);
+    try {
+      await this.envStore.deleteEnvironment(target.uuid);
+      if (this.viewMode() === 'studio' && this.current()?.uuid === target.uuid) {
+        this.viewMode.set('dashboard');
+      }
+      this.projectToDelete.set(null);
+      this.cdr.markForCheck();
+    } finally {
+      this.isDeletingProject.set(false);
+    }
+  }
+
+  deleteEnvironmentRow(summary: EnvironmentSummary, event?: MouseEvent): void {
+    this.promptDeleteProject(summary, event);
   }
 
   duplicateEnvironmentRow(summary: EnvironmentSummary, event?: MouseEvent): void {

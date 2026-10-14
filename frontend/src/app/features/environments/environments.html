@@ -55,6 +55,15 @@
         <button type="button" class="sahayak-topbar__btn" (click)="exportEnvironmentRow(cur)">
           Export
         </button>
+        <button
+          type="button"
+          class="sahayak-topbar__btn sahayak-topbar__btn--delete"
+          title="Delete this project"
+          (click)="promptDeleteCurrentProject()"
+        >
+          <app-icon name="trash" [size]="12" />
+          <span>Delete</span>
+        </button>
       }
 
       @if (dirty()) {
@@ -172,12 +181,43 @@
               </button>
               <button
                 type="button"
-                class="sahayak-card__menu-btn"
-                title="Options"
-                (click)="openSettingsModal(summary, $event)"
+                class="sahayak-card__quick-btn sahayak-card__quick-btn--delete"
+                title="Delete project"
+                (click)="promptDeleteProject(summary, $event)"
               >
-                <app-icon name="more" [size]="14" />
+                <app-icon name="trash" [size]="11" />
               </button>
+              <div class="sahayak-card__menu-wrap">
+                <button
+                  type="button"
+                  class="sahayak-card__menu-btn"
+                  title="More options"
+                  (click)="toggleCardMenu(summary.uuid, $event)"
+                >
+                  <app-icon name="more" [size]="14" />
+                </button>
+                @if (activeCardMenuUuid() === summary.uuid) {
+                  <div class="sahayak-card__dropdown" (click)="$event.stopPropagation()">
+                    <button type="button" class="sahayak-card__dropdown-item" (click)="openSettingsModal(summary, $event); closeCardMenu()">
+                      <app-icon name="settings" [size]="12" />
+                      <span>Settings</span>
+                    </button>
+                    <button type="button" class="sahayak-card__dropdown-item" (click)="duplicateEnvironmentRow(summary, $event); closeCardMenu()">
+                      <app-icon name="copy" [size]="12" />
+                      <span>Duplicate</span>
+                    </button>
+                    <button type="button" class="sahayak-card__dropdown-item" (click)="exportEnvironmentRow(summary, $event); closeCardMenu()">
+                      <app-icon name="arrow-down" [size]="12" />
+                      <span>Export</span>
+                    </button>
+                    <div class="sahayak-card__dropdown-divider"></div>
+                    <button type="button" class="sahayak-card__dropdown-item sahayak-card__dropdown-item--danger" (click)="promptDeleteProject(summary, $event); closeCardMenu()">
+                      <app-icon name="trash" [size]="12" />
+                      <span>Delete Project</span>
+                    </button>
+                  </div>
+                }
+              </div>
             </div>
           </div>
 
@@ -546,6 +586,23 @@
                     (change)="applySettings({ ...currentEnv, endpointPrefix: $any($event.target).value })"
                   />
                 </div>
+
+                <div class="sahayak-studio__danger-zone">
+                  <div class="sahayak-studio__danger-info">
+                    <h4 class="sahayak-studio__danger-title">Delete Project</h4>
+                    <p class="sahayak-studio__danger-desc">
+                      Permanently delete <strong>{{ currentEnv.name }}</strong>, its listening port configuration (port {{ currentEnv.port }}), and all {{ currentEnv.routes.length }} configured routes. This action cannot be undone.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    class="sahayak-studio__danger-btn"
+                    (click)="promptDeleteCurrentProject()"
+                  >
+                    <app-icon name="trash" [size]="12" />
+                    <span>Delete Project</span>
+                  </button>
+                </div>
               </div>
             }
           }
@@ -627,6 +684,63 @@
         </button>
       </div>
     </form>
+  </app-modal>
+}
+
+<!-- Delete Project Confirmation Modal -->
+@if (projectToDelete(); as project) {
+  <app-modal title="Delete Project" (closed)="cancelDeleteProject()">
+    <div class="sahayak-delete-modal">
+      <div class="sahayak-delete-modal__header">
+        <div class="sahayak-delete-modal__badge">
+          <app-icon name="trash" [size]="20" />
+        </div>
+        <div>
+          <h3 class="sahayak-delete-modal__title">Delete "{{ project.name }}"?</h3>
+          <p class="sahayak-delete-modal__subtitle">
+            Are you sure you want to permanently delete this project?
+          </p>
+        </div>
+      </div>
+
+      <div class="sahayak-delete-modal__details">
+        <div class="sahayak-delete-modal__detail-row">
+          <span class="sahayak-delete-modal__detail-label">Project:</span>
+          <span class="sahayak-delete-modal__detail-val"><strong>{{ project.name }}</strong></span>
+        </div>
+        <div class="sahayak-delete-modal__detail-row">
+          <span class="sahayak-delete-modal__detail-label">Port:</span>
+          <span class="sahayak-delete-modal__detail-val">{{ project.port }} (listener will be stopped)</span>
+        </div>
+        <div class="sahayak-delete-modal__detail-row">
+          <span class="sahayak-delete-modal__detail-label">Routes:</span>
+          <span class="sahayak-delete-modal__detail-val">{{ project.routeCount }} routes will be deleted</span>
+        </div>
+      </div>
+
+      <p class="sahayak-delete-modal__warning">
+        This action cannot be reversed. All routes, headers, and mock responses will be permanently removed.
+      </p>
+
+      <div class="sahayak-delete-modal__actions">
+        <button
+          type="button"
+          class="sahayak-delete-modal__btn sahayak-delete-modal__btn--cancel"
+          [disabled]="isDeletingProject()"
+          (click)="cancelDeleteProject()"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="sahayak-delete-modal__btn sahayak-delete-modal__btn--danger"
+          [disabled]="isDeletingProject()"
+          (click)="confirmDeleteProject()"
+        >
+          {{ isDeletingProject() ? 'Deleting…' : 'Delete Project' }}
+        </button>
+      </div>
+    </div>
   </app-modal>
 }
 

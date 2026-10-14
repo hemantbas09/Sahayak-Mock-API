@@ -139,7 +139,7 @@ export function createApiRouter(deps: ApiDeps): Router {
     res.status(500).json({ error: result.message ?? 'Persistence failed' });
   });
 
-  router.delete('/environments/:uuid', authMw, requireRole('admin'), async (req, res) => {
+  router.delete('/environments/:uuid', authMw, requireRole('editor'), async (req, res) => {
     const result = await store.deleteEnvironment(req.params.uuid);
     res.status(result.ok ? 200 : result.error === 'not-found' ? 404 : 500).json(result.ok ? { success: true } : { error: result.error });
   });
