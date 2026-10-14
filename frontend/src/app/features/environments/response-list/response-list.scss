@@ -1,0 +1,143 @@
+@use 'tokens' as *;
+
+.response-list {
+  display: flex;
+  flex-direction: column;
+  gap: $space-2;
+
+  &__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  &__heading {
+    margin: 0;
+    font-size: $font-size-sm;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: $color-text-muted;
+  }
+
+  &__add {
+    padding: $space-1 $space-2;
+    background: transparent;
+    border: 1px solid $color-border;
+    border-radius: $radius-sm;
+    color: $color-text;
+    font-size: $font-size-sm;
+    cursor: pointer;
+
+    &:hover {
+      border-color: $color-primary;
+    }
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: $space-2;
+    padding: $space-2;
+    cursor: pointer;
+    background: $color-surface-2;
+    border: 1px solid $color-border;
+    border-radius: $radius-sm;
+  }
+
+  &__default {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    color: $color-text-muted;
+    font-size: $font-size-sm;
+    cursor: pointer;
+    white-space: nowrap;
+
+    input {
+      accent-color: $color-primary;
+    }
+  }
+
+  &__status {
+    min-width: 38px;
+    padding: 2px $space-2;
+    border-radius: $radius-sm;
+    background: rgba(52, 211, 153, 0.15);
+    color: $color-success;
+    font-size: $font-size-sm;
+    font-weight: 700;
+    font-family: $font-mono;
+    text-align: center;
+
+    &--warn {
+      background: rgba(251, 191, 36, 0.15);
+      color: $color-warning;
+    }
+
+    &--error {
+      background: rgba(248, 113, 113, 0.15);
+      color: $color-danger;
+    }
+  }
+
+  &__label {
+    flex: 1;
+    min-width: 0;
+    color: $color-text;
+    font-size: $font-size-sm;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__rules-badge {
+    padding: 2px $space-2;
+    border-radius: $radius-pill;
+    background: rgba(56, 189, 248, 0.12);
+    border: 1px solid $color-primary;
+    color: $color-primary;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  &__row-actions {
+    display: flex;
+    gap: 2px;
+
+    button {
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      background: transparent;
+      border: none;
+      border-radius: $radius-sm;
+      color: $color-text-muted;
+      font-size: 12px;
+      cursor: pointer;
+
+      &:hover:not(:disabled) {
+        background: $color-border;
+        color: $color-text;
+      }
+
+      &:disabled {
+        opacity: 0.35;
+        cursor: default;
+      }
+    }
+
+    .response-list__delete:hover {
+      background: rgba(248, 113, 113, 0.15);
+      color: $color-danger;
+    }
+  }
+
+  &__empty {
+    padding: $space-3;
+    color: $color-text-muted;
+    font-size: $font-size-sm;
+    text-align: center;
+    border: 1px dashed $color-border;
+    border-radius: $radius-sm;
+  }
+}

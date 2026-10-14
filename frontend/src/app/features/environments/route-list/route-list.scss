@@ -1,0 +1,161 @@
+@use 'tokens' as *;
+
+.route-list {
+  display: flex;
+  flex-direction: column;
+  gap: $space-2;
+
+  &__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: $space-3;
+  }
+
+  &__heading {
+    margin: 0;
+    font-size: $font-size-md;
+    letter-spacing: -0.01em;
+  }
+
+  &__actions {
+    display: flex;
+    gap: $space-2;
+  }
+
+  &__add {
+    padding: $space-1 $space-3;
+    background: $color-surface-2;
+    border: 1px solid $color-border;
+    border-radius: $radius-sm;
+    color: $color-text;
+    font-size: $font-size-sm;
+    cursor: pointer;
+
+    &:hover {
+      border-color: $color-primary;
+    }
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: $space-2;
+    padding: $space-2 $space-3;
+    background: $color-surface;
+    border: 1px solid $color-border;
+    border-radius: $radius-sm;
+
+    &--selected {
+      border-color: $color-primary;
+    }
+  }
+
+  &__order {
+    min-width: 18px;
+    color: $color-text-muted;
+    font-size: $font-size-sm;
+    font-family: $font-mono;
+    text-align: right;
+  }
+
+  &__badge {
+    min-width: 58px;
+    padding: 3px $space-2;
+    background: $color-surface-2;
+    border: 1px solid $color-border;
+    border-radius: $radius-sm;
+    color: $color-method-get;
+    font-size: $font-size-sm;
+    font-weight: 700;
+    font-family: $font-mono;
+    letter-spacing: 0.03em;
+    cursor: pointer;
+
+    &--crud {
+      color: $color-primary;
+      border-color: $color-primary;
+    }
+
+    &:hover {
+      border-color: $color-primary;
+    }
+  }
+
+  &__endpoint {
+    flex: 1;
+    min-width: 0;
+    padding: 0;
+    background: transparent;
+    border: none;
+    color: $color-text;
+    font-family: $font-mono;
+    font-size: $font-size-sm;
+    text-align: left;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    cursor: pointer;
+
+    &:hover {
+      color: $color-primary;
+    }
+  }
+
+  &__resp-count {
+    color: $color-text-muted;
+    font-size: $font-size-sm;
+    white-space: nowrap;
+  }
+
+  &__mode {
+    padding: 3px $space-2;
+    background: $color-surface-2;
+    border: 1px solid $color-border;
+    border-radius: $radius-sm;
+    color: $color-text;
+    font-size: $font-size-sm;
+    cursor: pointer;
+  }
+
+  &__row-actions {
+    display: flex;
+    gap: 2px;
+
+    button {
+      width: 26px;
+      height: 26px;
+      padding: 0;
+      background: transparent;
+      border: none;
+      border-radius: $radius-sm;
+      color: $color-text-muted;
+      font-size: 12px;
+      cursor: pointer;
+
+      &:hover:not(:disabled) {
+        background: $color-border;
+        color: $color-text;
+      }
+
+      &:disabled {
+        opacity: 0.35;
+        cursor: default;
+      }
+    }
+
+    .route-list__delete:hover {
+      background: rgba(248, 113, 113, 0.15);
+      color: $color-danger;
+    }
+  }
+
+  &__empty {
+    padding: $space-4;
+    color: $color-text-muted;
+    font-size: $font-size-sm;
+    text-align: center;
+    border: 1px dashed $color-border;
+    border-radius: $radius-sm;
+  }
+}

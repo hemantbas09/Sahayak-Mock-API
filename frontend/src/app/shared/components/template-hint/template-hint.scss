@@ -1,0 +1,37 @@
+@use 'tokens' as *;
+
+.template-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: $space-1;
+  padding: $space-2;
+  background: rgba(56, 189, 248, 0.06);
+  border: 1px dashed $color-border;
+  border-radius: $radius-sm;
+
+  &__label {
+    color: $color-text-muted;
+    font-size: $font-size-sm;
+  }
+
+  &__chip {
+    padding: 2px $space-2;
+    background: $color-surface-2;
+    border: 1px solid $color-border;
+    border-radius: $radius-pill;
+    color: $color-primary;
+    font-family: $font-mono;
+    font-size: 11px;
+    cursor: pointer;
+
+    &:hover {
+      border-color: $color-primary;
+    }
+  }
+
+  &__more {
+    color: $color-text-muted;
+    font-size: 11px;
+  }
+}

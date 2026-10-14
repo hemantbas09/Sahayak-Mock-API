@@ -1,0 +1,111 @@
+@use 'tokens' as *;
+
+.helper-picker {
+  position: relative;
+  display: inline-block;
+
+  &__toggle {
+    padding: $space-1 $space-3;
+    background: $color-surface-2;
+    border: 1px solid $color-border;
+    border-radius: $radius-pill;
+    color: $color-text-muted;
+    font-size: $font-size-sm;
+    cursor: pointer;
+
+    &:hover,
+    &--open {
+      border-color: $color-primary;
+      color: $color-primary;
+    }
+  }
+
+  &__panel {
+    position: absolute;
+    top: calc(100% + $space-1);
+    right: 0;
+    z-index: 30;
+    width: 420px;
+    max-width: 90vw;
+    display: flex;
+    flex-direction: column;
+    gap: $space-2;
+    padding: $space-3;
+    background: $color-surface;
+    border: 1px solid $color-border;
+    border-radius: $radius-md;
+    box-shadow: $shadow-lg;
+  }
+
+  &__search {
+    padding: $space-2;
+    background: $color-bg;
+    border: 1px solid $color-border;
+    border-radius: $radius-sm;
+    color: $color-text;
+    font-size: $font-size-sm;
+
+    &:focus {
+      outline: none;
+      border-color: $color-primary;
+    }
+  }
+
+  &__results {
+    max-height: 340px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: $space-1;
+  }
+
+  &__group-label {
+    margin: $space-2 0 0;
+    color: $color-primary;
+    font-size: $font-size-sm;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+
+    &:first-child {
+      margin-top: 0;
+    }
+  }
+
+  &__entry {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: $space-2;
+    align-items: baseline;
+    width: 100%;
+    padding: $space-1 $space-2;
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: $radius-sm;
+    color: $color-text;
+    text-align: left;
+    cursor: pointer;
+
+    &:hover {
+      background: $color-surface-2;
+      border-color: $color-border;
+    }
+  }
+
+  &__snippet {
+    font-size: $font-size-sm;
+    color: $color-primary;
+    white-space: nowrap;
+  }
+
+  &__desc {
+    color: $color-text-muted;
+    font-size: $font-size-sm;
+  }
+
+  &__none {
+    margin: $space-2 0 0;
+    color: $color-text-muted;
+    font-size: $font-size-sm;
+  }
+}

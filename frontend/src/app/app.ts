@@ -1,11 +1,10 @@
 import { Component } from '@angular/core';
-import { EmptyState } from './shared/components/empty-state/empty-state';
-import { Spinner } from './shared/components/spinner/spinner';
+import { RouterOutlet } from '@angular/router';
 
+/** Root shell — the feature routes (login / environments) own the page. */
 @Component({
   selector: 'app-root',
-  imports: [EmptyState, Spinner],
-  templateUrl: './app.html',
-  styleUrl: './app.scss',
+  imports: [RouterOutlet],
+  template: `<router-outlet />`,
 })
 export class App {}

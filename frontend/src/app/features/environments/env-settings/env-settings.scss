@@ -1,0 +1,88 @@
+@use 'tokens' as *;
+
+.env-settings {
+  display: flex;
+  flex-direction: column;
+  gap: $space-4;
+
+  &__row {
+    display: flex;
+    gap: $space-3;
+    align-items: flex-end;
+    flex-wrap: wrap;
+  }
+
+  &__field {
+    display: flex;
+    flex-direction: column;
+    gap: $space-1;
+    min-width: 160px;
+
+    &--grow {
+      flex: 1;
+    }
+  }
+
+  &__label {
+    color: $color-text-muted;
+    font-size: $font-size-sm;
+  }
+
+  &__input {
+    width: 100%;
+    padding: $space-2;
+    background: $color-bg;
+    border: 1px solid $color-border;
+    border-radius: $radius-sm;
+    color: $color-text;
+    font-size: $font-size-sm;
+    box-sizing: border-box;
+
+    &:focus {
+      outline: none;
+      border-color: $color-primary;
+    }
+
+    &--narrow {
+      width: 110px;
+    }
+  }
+
+  &__section {
+    display: flex;
+    flex-direction: column;
+    gap: $space-2;
+    padding: $space-3;
+    background: $color-bg;
+    border: 1px solid $color-border;
+    border-radius: $radius-md;
+  }
+
+  &__section-label {
+    margin: 0;
+    color: $color-text-muted;
+    font-size: $font-size-sm;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  &__check {
+    display: inline-flex;
+    align-items: center;
+    gap: $space-2;
+    color: $color-text;
+    font-size: $font-size-sm;
+    cursor: pointer;
+    margin-bottom: $space-2;
+
+    input {
+      accent-color: $color-primary;
+    }
+  }
+
+  &__hint {
+    margin: 0;
+    color: $color-text-muted;
+    font-size: $font-size-sm;
+  }
+}

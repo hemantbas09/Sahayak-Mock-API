@@ -1,0 +1,379 @@
+@use 'tokens' as *;
+
+.env-shell {
+  display: grid;
+  grid-template-columns: 280px 1fr;
+  height: 100vh;
+  overflow: hidden;
+
+  // ---------------------------------------------------------------- sidebar
+  &__sidebar {
+    display: flex;
+    flex-direction: column;
+    border-right: 1px solid $color-border;
+    background: $color-surface;
+    min-height: 0;
+  }
+
+  &__sidebar-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: $space-3 $space-4;
+    border-bottom: 1px solid $color-border;
+  }
+
+  &__brand {
+    margin: 0;
+    font-size: $font-size-lg;
+    letter-spacing: -0.02em;
+  }
+
+  &__new {
+    padding: $space-1 $space-3;
+    background: $color-primary;
+    border: none;
+    border-radius: $radius-sm;
+    color: $color-primary-contrast;
+    font-size: $font-size-sm;
+    font-weight: 600;
+    cursor: pointer;
+
+    &:hover {
+      background: $color-primary-hover;
+    }
+  }
+
+  &__sidebar-empty {
+    padding: $space-6;
+  }
+
+  &__env-list {
+    flex: 1;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: $space-1;
+    padding: $space-2;
+  }
+
+  &__env-item {
+    display: flex;
+    align-items: center;
+    gap: $space-1;
+    padding: $space-2;
+    border: 1px solid transparent;
+    border-radius: $radius-sm;
+
+    &:hover {
+      background: $color-surface-2;
+
+      .env-shell__env-actions {
+        opacity: 1;
+      }
+    }
+
+    &--active {
+      background: $color-surface-2;
+      border-color: $color-primary;
+    }
+  }
+
+  &__env-select {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 2px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    color: $color-text;
+    text-align: left;
+    cursor: pointer;
+    min-width: 0;
+  }
+
+  &__env-name {
+    font-weight: 600;
+    font-size: $font-size-sm;
+    max-width: 100%;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  &__env-meta {
+    color: $color-text-muted;
+    font-size: 11px;
+    font-family: $font-mono;
+  }
+
+  &__env-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: $radius-pill;
+    background: $color-border;
+    display: inline-block;
+
+    &--up {
+      background: $color-success;
+    }
+
+    &--error {
+      background: $color-danger;
+    }
+  }
+
+  &__env-actions {
+    display: flex;
+    gap: 2px;
+    opacity: 0;
+    transition: opacity 0.12s ease;
+
+    button {
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      background: transparent;
+      border: none;
+      border-radius: $radius-sm;
+      color: $color-text-muted;
+      font-size: 12px;
+      cursor: pointer;
+
+      &:hover {
+        background: $color-border;
+        color: $color-text;
+      }
+    }
+
+    .env-shell__env-delete:hover {
+      background: rgba(248, 113, 113, 0.15);
+      color: $color-danger;
+    }
+  }
+
+  // ---------------------------------------------------------------- main
+  &__main {
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+    min-height: 0;
+  }
+
+  &__savebar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: $space-4;
+    padding: $space-3 $space-6;
+    border-bottom: 1px solid $color-border;
+    background: $color-surface;
+  }
+
+  &__savebar-title {
+    display: flex;
+    align-items: center;
+    gap: $space-3;
+    min-width: 0;
+  }
+
+  &__env-title {
+    margin: 0;
+    font-size: $font-size-lg;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+
+  &__env-port {
+    color: $color-text-muted;
+    font-family: $font-mono;
+    font-size: $font-size-sm;
+  }
+
+  &__dirty-pill {
+    padding: 2px $space-2;
+    background: rgba(251, 191, 36, 0.15);
+    border: 1px solid $color-warning;
+    border-radius: $radius-pill;
+    color: $color-warning;
+    font-size: 11px;
+    white-space: nowrap;
+  }
+
+  &__savebar-actions {
+    display: flex;
+    align-items: center;
+    gap: $space-2;
+  }
+
+  &__btn {
+    padding: $space-2 $space-3;
+    background: $color-surface-2;
+    border: 1px solid $color-border;
+    border-radius: $radius-sm;
+    color: $color-text;
+    font-size: $font-size-sm;
+    cursor: pointer;
+    white-space: nowrap;
+
+    &:hover:not(:disabled) {
+      border-color: $color-primary;
+    }
+
+    &:disabled {
+      opacity: 0.55;
+      cursor: wait;
+    }
+
+    &--primary {
+      background: $color-primary;
+      border-color: $color-primary;
+      color: $color-primary-contrast;
+      font-weight: 600;
+
+      &:hover:not(:disabled) {
+        background: $color-primary-hover;
+      }
+    }
+
+    &--danger {
+      color: $color-danger;
+
+      &:hover:not(:disabled) {
+        border-color: $color-danger;
+      }
+    }
+  }
+
+  // ---------------------------------------------------------------- banners
+  &__conflict {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: $space-3;
+    padding: $space-3 $space-6;
+    background: rgba(251, 191, 36, 0.1);
+    border-bottom: 1px solid $color-warning;
+    color: $color-warning;
+    font-size: $font-size-sm;
+  }
+
+  &__conflict-actions button {
+    padding: $space-1 $space-2;
+    background: transparent;
+    border: 1px solid $color-warning;
+    border-radius: $radius-sm;
+    color: $color-warning;
+    font-size: $font-size-sm;
+    cursor: pointer;
+
+    &:hover {
+      background: rgba(251, 191, 36, 0.15);
+    }
+  }
+
+  &__saveerror {
+    padding: $space-3 $space-6;
+    background: rgba(248, 113, 113, 0.1);
+    border-bottom: 1px solid $color-danger;
+    color: $color-danger;
+    font-size: $font-size-sm;
+  }
+
+  // ---------------------------------------------------------------- tabs
+  &__tabs {
+    display: flex;
+    gap: $space-1;
+    padding: 0 $space-6;
+    border-bottom: 1px solid $color-border;
+    background: $color-surface;
+  }
+
+  &__tab {
+    display: inline-flex;
+    align-items: center;
+    gap: $space-2;
+    padding: $space-2 $space-3;
+    background: transparent;
+    border: none;
+    border-bottom: 2px solid transparent;
+    color: $color-text-muted;
+    font-size: $font-size-sm;
+    font-weight: 500;
+    cursor: pointer;
+
+    &:hover {
+      color: $color-text;
+    }
+
+    &--active {
+      color: $color-text;
+      border-bottom-color: $color-primary;
+    }
+  }
+
+  &__tab-count {
+    padding: 0 $space-2;
+    border-radius: $radius-pill;
+    background: $color-surface-2;
+    border: 1px solid $color-border;
+    color: $color-text-muted;
+    font-size: 11px;
+    font-family: $font-mono;
+  }
+
+  // ---------------------------------------------------------------- editor
+  &__editor {
+    flex: 1;
+    overflow-y: auto;
+    padding: $space-6;
+  }
+
+  &__routes-grid {
+    display: grid;
+    grid-template-columns: minmax(320px, 380px) 1fr;
+    gap: $space-6;
+    align-items: start;
+  }
+
+  &__routes-list-col,
+  &__data-list-col {
+    position: sticky;
+    top: 0;
+    display: flex;
+    flex-direction: column;
+    gap: $space-4;
+    min-width: 0;
+  }
+
+  &__routes-detail-col,
+  &__data-detail-col {
+    display: flex;
+    flex-direction: column;
+    gap: $space-4;
+    min-width: 0;
+  }
+
+  &__data-grid {
+    display: grid;
+    grid-template-columns: minmax(280px, 340px) 1fr;
+    gap: $space-6;
+    align-items: start;
+  }
+
+  &__todo {
+    color: $color-text-muted;
+    font-size: $font-size-sm;
+    padding: $space-4;
+    border: 1px dashed $color-border;
+    border-radius: $radius-sm;
+    text-align: center;
+  }
+
+  &__noenv {
+    margin: auto;
+  }
+}

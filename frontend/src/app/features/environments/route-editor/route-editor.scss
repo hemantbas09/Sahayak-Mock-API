@@ -1,0 +1,91 @@
+@use 'tokens' as *;
+
+.route-editor {
+  display: flex;
+  flex-direction: column;
+  gap: $space-3;
+
+  &__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  &__heading {
+    margin: 0;
+    font-size: $font-size-md;
+    letter-spacing: -0.01em;
+  }
+
+  &__type-badge {
+    padding: 2px $space-2;
+    background: $color-surface-2;
+    border: 1px solid $color-border;
+    border-radius: $radius-pill;
+    color: $color-text-muted;
+    font-size: $font-size-sm;
+    font-weight: 600;
+  }
+
+  &__grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: $space-3;
+  }
+
+  &__field {
+    display: flex;
+    flex-direction: column;
+    gap: $space-1;
+    min-width: 0;
+
+    &--half {
+      grid-column: span 1;
+    }
+
+    &--quarter {
+      grid-column: span 1;
+    }
+  }
+
+  &__label {
+    color: $color-text-muted;
+    font-size: $font-size-sm;
+  }
+
+  &__endpoint-input,
+  &__method,
+  &__bucket,
+  &__docs {
+    width: 100%;
+    padding: $space-2;
+    background: $color-bg;
+    border: 1px solid $color-border;
+    border-radius: $radius-sm;
+    color: $color-text;
+    font-size: $font-size-sm;
+    font-family: $font-mono;
+    box-sizing: border-box;
+
+    &:focus {
+      outline: none;
+      border-color: $color-primary;
+    }
+  }
+
+  &__docs {
+    font-family: $font-sans;
+    resize: vertical;
+  }
+
+  &__method,
+  &__bucket {
+    font-family: $font-sans;
+  }
+
+  &__hint {
+    margin: 0;
+    color: $color-text-muted;
+    font-size: $font-size-sm;
+  }
+}

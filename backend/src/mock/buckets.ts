@@ -8,7 +8,7 @@
 import { randomUUID } from 'node:crypto';
 import { faker as defaultFaker, type Faker } from '@faker-js/faker';
 import { DataBucket } from '../lib/types';
-import { getNestedValue, setNestedValue } from './context';
+import { getNestedValue, hasPath, setNestedValue } from './context';
 
 export type BucketShape = 'array-objects' | 'array-primitives' | 'object' | 'primitive' | 'raw';
 
@@ -71,7 +71,7 @@ export function coerceHelperValue(raw: string): unknown {
  * Apply a `setData` mutation (DESIGN.md §2.10) to a bucket content string
  * and return the new string. JSON content is mutated as data and
  * re-stringified with 2-space indent; raw content only supports `set`
- * (the value replaces the whole bucket).
+ * (the value replaces the whole bucket, path ignored).
  *
  * Operations:
  * - `set`        write value at path (path '' replaces the whole bucket)
@@ -103,7 +103,15 @@ export function mutateBucketContent(
   }
 
   if (path === '') {
-    if (operation !== 'set') return fail(`only "set" supports an empty path, got "${operation}"`);
+    // Empty path = the bucket root. `set` replaces the whole bucket;
+    // `push` is allowed when the root itself is an array (appends to it).
+    if (operation === 'push' && Array.isArray(data.value)) {
+      data.value.push(coerceHelperValue(value));
+      return { content: JSON.stringify(data.value, null, 2), ok: true };
+    }
+    if (operation !== 'set') {
+      return fail(`empty path only supports "set" (or "push" on an array bucket), got "${operation}"`);
+    }
     const next = coerceHelperValue(value);
     return { content: JSON.stringify(next, null, 2), ok: true };
   }
@@ -115,9 +123,12 @@ export function mutateBucketContent(
 
   if (operation === 'set') {
     if (writableRoot === null) return fail(`invalid path "${path}" on primitive bucket`);
-    if (!setNestedValue(writableRoot as unknown as Record<string, unknown>, path, coerceHelperValue(value))) {
-      return fail(`invalid path "${path}"`);
-    }
+    const ok = setNestedValue(
+      writableRoot as unknown as Record<string, unknown>,
+      path,
+      coerceHelperValue(value)
+    );
+    if (!ok) return fail(`invalid path "${path}"`);
     return { content: JSON.stringify(writableRoot, null, 2), ok: true };
   }
 
@@ -133,48 +144,30 @@ export function mutateBucketContent(
   if (operation === 'increment' || operation === 'decrement') {
     if (writableRoot === null) return fail(`invalid path "${path}" on primitive bucket`);
     const delta = operation === 'increment' ? 1 : -1;
-    const current = getNestedValue(data.value, path);
-    if (!hasPathSafe(data.value, path)) {
+    const root = writableRoot as unknown as Record<string, unknown>;
+    if (!hasPath(data.value, path)) {
       // Missing path → starts from 0 (DESIGN: missing → ±1).
-      if (!setNestedValue(writableRoot as unknown as Record<string, unknown>, path, delta)) {
-        return fail(`invalid path "${path}"`);
-      }
-      return { content: JSON.stringify(writableRoot, null, 2), ok: true };
+      if (!setNestedValue(root, path, delta)) return fail(`invalid path "${path}"`);
+      return { content: JSON.stringify(root, null, 2), ok: true };
     }
+    const current = getNestedValue(data.value, path);
     if (typeof current !== 'number' || !Number.isFinite(current)) {
       return fail(`path "${path}" is not a finite number`);
     }
-    if (!setNestedValue(writableRoot as unknown as Record<string, unknown>, path, current + delta)) {
-      return fail(`invalid path "${path}"`);
-    }
-    return { content: JSON.stringify(writableRoot, null, 2), ok: true };
+    if (!setNestedValue(root, path, current + delta)) return fail(`invalid path "${path}"`);
+    return { content: JSON.stringify(root, null, 2), ok: true };
   }
 
   if (operation === 'invert') {
     if (writableRoot === null) return fail(`invalid path "${path}" on primitive bucket`);
     const current = getNestedValue(data.value, path);
     if (typeof current !== 'boolean') return fail(`path "${path}" is not a boolean`);
-    if (!setNestedValue(writableRoot as unknown as Record<string, unknown>, path, !current)) {
-      return fail(`invalid path "${path}"`);
-    }
+    const ok = setNestedValue(writableRoot as unknown as Record<string, unknown>, path, !current);
+    if (!ok) return fail(`invalid path "${path}"`);
     return { content: JSON.stringify(writableRoot, null, 2), ok: true };
   }
 
   return fail(`unknown operation "${operation}"`);
-}
-
-/** Like context.hasPath but exported-safe local duplicate (avoids circular import risk). */
-function hasPathSafe(target: unknown, path: string): boolean {
-  if (path === '') return target != null;
-  const segments = path.split('.');
-  let current: unknown = target;
-  for (const segment of segments) {
-    if (segment === '__proto__' || segment === 'constructor' || segment === 'prototype') return false;
-    if (current == null || typeof current !== 'object') return false;
-    current = (current as Record<string, unknown>)[segment];
-    if (current === undefined) return false;
-  }
-  return true;
 }
 
 function isFiniteNumber(v: unknown): v is number {
@@ -192,7 +185,7 @@ function arrayIds(data: BucketData): unknown[] {
  * Decide the id strategy for CRUD inserts (DESIGN.md §2.5 "IDs"):
  * - all existing ids finite numbers → 'increment' (max+1)
  * - all existing ids match /^[0-9a-f]{24}$/i → 'objectId'
- * - else (incl. empty bucket) → 'uuid'
+ * - else (incl. empty bucket / non-array) → 'uuid'
  */
 export function detectIdStrategy(data: BucketData): 'increment' | 'objectId' | 'uuid' {
   const ids = arrayIds(data);
@@ -219,11 +212,12 @@ export function generateId(
           if (id > max) max = id;
         }
       }
-      // No finite ids (e.g. called on an empty bucket): first id is 1.
+      // No finite ids (e.g. empty bucket): first id is 1.
       return any ? max + 1 : 1;
     }
     case 'objectId':
-      return (faker ?? defaultFaker).database.objectId();
+      // faker 8.4.1 API: database.mongodbObjectId() (renamed from objectId in v9).
+      return (faker ?? defaultFaker).database.mongodbObjectId();
     case 'uuid':
       return randomUUID();
   }

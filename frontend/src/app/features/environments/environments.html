@@ -1,0 +1,234 @@
+<div class="env-shell">
+  <!-- ============ Sidebar (F7) ============ -->
+  <aside class="env-shell__sidebar">
+    <header class="env-shell__sidebar-header">
+      <h2 class="env-shell__brand">Sahayak</h2>
+      <button class="env-shell__new" type="button" (click)="createEnvironmentRow()">+ New</button>
+    </header>
+
+    @if (list().length === 0) {
+      <app-empty-state class="env-shell__sidebar-empty" title="No environments" hint="Create one to start mocking." />
+    } @else {
+      <nav class="env-shell__env-list" aria-label="Environments">
+        @for (summary of list(); track summary.uuid) {
+          <div
+            class="env-shell__env-item"
+            [class.env-shell__env-item--active]="selectedUuid() === summary.uuid"
+          >
+            <button class="env-shell__env-select" type="button" (click)="selectEnvironmentRow(summary)">
+              <span class="env-shell__env-name">{{ summary.name }}</span>
+              <span class="env-shell__env-meta">
+                :{{ summary.port }}
+                @if (summary.endpointPrefix !== '') { <span>{{ summary.endpointPrefix }}</span> }
+              </span>
+              <span
+                class="env-shell__env-dot"
+                [class.env-shell__env-dot--up]="summary.listener === 'listening'"
+                [class.env-shell__env-dot--error]="summary.listener === 'error'"
+                [attr.title]="'listener: ' + summary.listener"
+              ></span>
+            </button>
+            <span class="env-shell__env-actions">
+              <button type="button" title="Duplicate" (click)="duplicateEnvironmentRow(summary)">⧉</button>
+              <button
+                type="button"
+                title="Delete"
+                class="env-shell__env-delete"
+                (click)="deleteEnvironmentRow(summary)"
+              >🗑</button>
+            </span>
+          </div>
+        }
+      </nav>
+    }
+  </aside>
+
+  <!-- ============ Main column ============ -->
+  <section class="env-shell__main">
+    @if (current(); as currentEnv) {
+      <!-- Save bar (F14) -->
+      <header class="env-shell__savebar">
+        <div class="env-shell__savebar-title">
+          <h1 class="env-shell__env-title">{{ currentEnv.name }}</h1>
+          <span class="env-shell__env-port">port {{ currentEnv.port }}</span>
+          @if (currentEnv.endpointPrefix !== '') {
+            <span class="env-shell__env-port">{{ currentEnv.endpointPrefix }}</span>
+          }
+          @if (dirty()) {
+            <span class="env-shell__dirty-pill">Unsaved changes</span>
+          }
+        </div>
+        <div class="env-shell__savebar-actions">
+          <button class="env-shell__btn" type="button" (click)="showSettings.set(true)">⚙ Settings</button>
+          <button class="env-shell__btn" type="button" (click)="showImport.set(true)">⇪ Import / Export</button>
+          @if (dirty()) {
+            <button
+              class="env-shell__btn env-shell__btn--danger"
+              type="button"
+              (click)="discardChanges()"
+            >Discard</button>
+            <button
+              class="env-shell__btn env-shell__btn--primary"
+              type="button"
+              [disabled]="saving()"
+              (click)="saveCurrent()"
+            >
+              {{ saving() ? 'Saving…' : 'Save' }}
+            </button>
+          }
+        </div>
+      </header>
+
+      <!-- Conflict banner (409) -->
+      @if (conflictInfo(); as conflict) {
+        <div class="env-shell__conflict" role="alert">
+          <span class="env-shell__conflict-text">{{ conflict.message }}</span>
+          <span class="env-shell__conflict-actions">
+            <button type="button" (click)="reloadLatestVersion()">
+              Reload latest (v{{ conflict.serverVersion }})
+            </button>
+            <button type="button" (click)="dismissConflictBanner()">Dismiss</button>
+          </span>
+        </div>
+      }
+      @if (saveError(); as saveErrorMessage) {
+        <div class="env-shell__saveerror" role="alert">{{ saveErrorMessage }}</div>
+      }
+
+      <!-- Tabs -->
+      <nav class="env-shell__tabs" aria-label="Editor tabs">
+        <button
+          class="env-shell__tab"
+          type="button"
+          [class.env-shell__tab--active]="activeTab() === 'routes'"
+          (click)="switchTab('routes')"
+        >
+          Routes
+          <span class="env-shell__tab-count">{{ currentEnv.routes.length }}</span>
+        </button>
+        <button
+          class="env-shell__tab"
+          type="button"
+          [class.env-shell__tab--active]="activeTab() === 'data'"
+          (click)="switchTab('data'); onDataTabShown(currentEnv.data)"
+        >
+          Data
+          <span class="env-shell__tab-count">{{ currentEnv.data.length }}</span>
+        </button>
+        <button
+          class="env-shell__tab"
+          type="button"
+          [class.env-shell__tab--active]="activeTab() === 'logs'"
+          (click)="switchTab('logs')"
+        >
+          📜 Logs
+        </button>
+      </nav>
+
+      <!-- Editor area -->
+      <div class="env-shell__editor">
+        @switch (activeTab()) {
+          @case ('routes') {
+            <div class="env-shell__routes-grid">
+              <div class="env-shell__routes-list-col">
+                <app-route-list
+                  [routesInput]="currentEnv.routes"
+                  [selectedUuidInput]="selectedRouteUuid()"
+                  (routesChange)="onRouteListChanged($event)"
+                  (selectChange)="onRouteSelected($event)"
+                />
+              </div>
+              <div class="env-shell__routes-detail-col">
+                @if (selectedRoute(); as activeRoute) {
+                  <app-route-editor
+                    [routeInput]="activeRoute"
+                    [bucketsInput]="currentEnv.data"
+                    (routeChange)="applyRoute($event)"
+                  />
+                  <app-response-list
+                    [responsesInput]="activeRoute.responses"
+                    [selectedUuidInput]="selectedResponseUuid()"
+                    (responsesChange)="applyResponses(activeRoute.uuid, $event)"
+                    (selectChange)="onResponseSelected($event)"
+                  />
+                  @if (selectedResponse(); as activeResponse) {
+                    <app-response-editor
+                      [responseInput]="activeResponse"
+                      [bucketsInput]="currentEnv.data"
+                      [environmentUuidInput]="currentEnv.uuid"
+                      (responseChange)="applyResponse($event)"
+                    />
+                  } @else {
+                    <p class="env-shell__todo">
+                      Select a response above to edit its status, headers, body and rules.
+                    </p>
+                  }
+                } @else {
+                  <p class="env-shell__todo">
+                    Select a route on the left, or add one, to edit its endpoint, responses and rules.
+                  </p>
+                }
+              </div>
+            </div>
+          }
+
+          @case ('data') {
+            <div class="env-shell__data-grid">
+              <div class="env-shell__data-list-col">
+                <app-data-bucket-list
+                  [bucketsInput]="currentEnv.data"
+                  [referencesInput]="bucketReferences()"
+                  [activeUuidInput]="selectedBucketUuid()"
+                  (bucketsChange)="applyBuckets($event)"
+                  (selectChange)="selectedBucketUuid.set($event)"
+                />
+              </div>
+              <div class="env-shell__data-detail-col">
+                @if (selectedBucket(); as activeBucket) {
+                  <app-data-bucket-editor
+                    [bucketInput]="activeBucket"
+                    (bucketChange)="applyBucket($event)"
+                  />
+                } @else {
+                  <p class="env-shell__todo">
+                    Select a bucket on the left, or add one, to edit its name and templated content.
+                  </p>
+                }
+              </div>
+            </div>
+          }
+
+          @case ('logs') {
+            <app-log-viewer
+              [environmentsInput]="list()"
+              [canClearInput]="canClearLogs()"
+            />
+          }
+        }
+      </div>
+    } @else {
+      <app-empty-state
+        class="env-shell__noenv"
+        title="Select an environment"
+        hint="Pick one from the sidebar, or create a new one."
+      />
+    }
+  </section>
+
+  <!-- ============ Modals ============ -->
+  @if (showSettings() && current(); as settingsEnv) {
+    <app-env-settings
+      [environmentInput]="settingsEnv"
+      (environmentChange)="applySettings($event)"
+      (closed)="showSettings.set(false)"
+    />
+  }
+  @if (showImport() && current(); as importEnv) {
+    <app-import-export
+      [environmentUuidInput]="importEnv.uuid"
+      [environmentNameInput]="importEnv.name"
+      (imported)="onImported()"
+      (closed)="showImport.set(false)"
+    />
+  }
+</div>

@@ -1,0 +1,57 @@
+@use 'tokens' as *;
+
+.modal {
+  position: fixed;
+  inset: 0;
+  z-index: 50;
+  display: flex;
+  align-items: flex-start;
+  justify-content: center;
+  overflow-y: auto;
+  padding: $space-8 $space-6;
+  background: rgba(15, 23, 42, 0.7);
+
+  &__panel {
+    width: min(680px, 100%);
+    background: $color-surface;
+    border: 1px solid $color-border;
+    border-radius: $radius-md;
+    box-shadow: $shadow-lg;
+  }
+
+  &__header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: $space-3 $space-4;
+    border-bottom: 1px solid $color-border;
+  }
+
+  &__title {
+    margin: 0;
+    font-size: $font-size-md;
+    letter-spacing: -0.01em;
+  }
+
+  &__close {
+    width: 28px;
+    height: 28px;
+    padding: 0;
+    background: transparent;
+    border: none;
+    border-radius: $radius-sm;
+    color: $color-text-muted;
+    font-size: 16px;
+    line-height: 1;
+    cursor: pointer;
+
+    &:hover {
+      background: $color-surface-2;
+      color: $color-text;
+    }
+  }
+
+  &__body {
+    padding: $space-4;
+  }
+}

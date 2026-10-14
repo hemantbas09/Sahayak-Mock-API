@@ -1,0 +1,93 @@
+@use 'tokens' as *;
+
+.login-screen {
+  display: grid;
+  place-items: center;
+  min-height: 100vh;
+  padding: $space-6;
+
+  &__card {
+    width: min(400px, 100%);
+    display: flex;
+    flex-direction: column;
+    gap: $space-4;
+    padding: $space-8;
+    background: $color-surface;
+    border: 1px solid $color-border;
+    border-radius: $radius-md;
+    box-shadow: $shadow-lg;
+  }
+
+  &__title {
+    margin: 0;
+    font-size: 28px;
+    letter-spacing: -0.02em;
+  }
+
+  &__subtitle {
+    margin: -#{$space-3} 0 0;
+    color: $color-text-muted;
+    font-size: $font-size-sm;
+  }
+
+  &__error {
+    margin: 0;
+    padding: $space-2 $space-3;
+    background: rgba(248, 113, 113, 0.12);
+    border: 1px solid $color-danger;
+    border-radius: $radius-sm;
+    color: $color-danger;
+    font-size: $font-size-sm;
+  }
+
+  &__field {
+    display: flex;
+    flex-direction: column;
+    gap: $space-1;
+  }
+
+  &__label {
+    color: $color-text-muted;
+    font-size: $font-size-sm;
+  }
+
+  &__input {
+    padding: $space-2 $space-3;
+    background: $color-bg;
+    border: 1px solid $color-border;
+    border-radius: $radius-sm;
+    color: $color-text;
+    font-size: $font-size-md;
+
+    &:focus {
+      outline: none;
+      border-color: $color-primary;
+    }
+  }
+
+  &__submit {
+    padding: $space-3;
+    background: $color-primary;
+    border: none;
+    border-radius: $radius-sm;
+    color: $color-primary-contrast;
+    font-size: $font-size-md;
+    font-weight: 600;
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+      background: $color-primary-hover;
+    }
+
+    &:disabled {
+      opacity: 0.6;
+      cursor: wait;
+    }
+  }
+
+  &__hint {
+    margin: 0;
+    color: $color-text-muted;
+    font-size: $font-size-sm;
+  }
+}

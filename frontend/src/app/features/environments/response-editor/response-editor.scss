@@ -1,0 +1,200 @@
+@use 'tokens' as *;
+
+.response-editor {
+  display: flex;
+  flex-direction: column;
+  gap: $space-4;
+
+  &__meta {
+    display: grid;
+    grid-template-columns: 2fr 1fr 1fr;
+    gap: $space-3;
+  }
+
+  &__field {
+    display: flex;
+    flex-direction: column;
+    gap: $space-1;
+    min-width: 0;
+  }
+
+  &__label {
+    color: $color-text-muted;
+    font-size: $font-size-sm;
+  }
+
+  &__label-input,
+  &__status-input,
+  &__latency-input {
+    width: 100%;
+    padding: $space-2;
+    background: $color-bg;
+    border: 1px solid $color-border;
+    border-radius: $radius-sm;
+    color: $color-text;
+    font-size: $font-size-sm;
+    box-sizing: border-box;
+
+    &:focus {
+      outline: none;
+      border-color: $color-primary;
+    }
+  }
+
+  &__section {
+    display: flex;
+    flex-direction: column;
+    gap: $space-2;
+    padding: $space-3;
+    background: $color-surface;
+    border: 1px solid $color-border;
+    border-radius: $radius-md;
+  }
+
+  &__section-label {
+    margin: 0 0 $space-1;
+    color: $color-text-muted;
+    font-size: $font-size-sm;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  &__body-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: $space-3;
+  }
+
+  &__body-type {
+    padding: $space-1 $space-2;
+    background: $color-surface-2;
+    border: 1px solid $color-border;
+    border-radius: $radius-sm;
+    color: $color-text;
+    font-size: $font-size-sm;
+    cursor: pointer;
+  }
+
+  &__inline {
+    display: flex;
+    flex-direction: column;
+    gap: $space-2;
+  }
+
+  &__inline-toolbar {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  &__body-textarea {
+    width: 100%;
+    padding: $space-3;
+    background: $color-bg;
+    border: 1px solid $color-border;
+    border-radius: $radius-sm;
+    color: $color-text;
+    font-size: $font-size-sm;
+    font-family: $font-mono;
+    line-height: 1.5;
+    resize: vertical;
+    box-sizing: border-box;
+
+    &:focus {
+      outline: none;
+      border-color: $color-primary;
+    }
+  }
+
+  &__preview-row {
+    display: flex;
+    justify-content: flex-end;
+  }
+
+  &__preview-btn {
+    padding: $space-1 $space-3;
+    background: $color-surface-2;
+    border: 1px solid $color-primary;
+    border-radius: $radius-sm;
+    color: $color-primary;
+    font-size: $font-size-sm;
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+      background: rgba(56, 189, 248, 0.12);
+    }
+
+    &:disabled {
+      opacity: 0.6;
+      cursor: wait;
+    }
+  }
+
+  &__preview {
+    background: $color-bg;
+    border: 1px solid $color-border;
+    border-radius: $radius-sm;
+    padding: $space-3;
+  }
+
+  &__preview-output {
+    margin: 0;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: $color-success;
+    font-size: $font-size-sm;
+    font-family: $font-mono;
+    ;
+  }
+
+  &__preview-warning {
+    margin: 0;
+    color: $color-warning;
+    font-size: $font-size-sm;
+  }
+
+  &__preview-error {
+    margin: 0;
+    color: $color-danger;
+    font-size: $font-size-sm;
+  }
+
+  &__file-input {
+    width: 100%;
+    padding: $space-2;
+    background: $color-bg;
+    border: 1px solid $color-border;
+    border-radius: $radius-sm;
+    color: $color-text;
+    font-size: $font-size-sm;
+    font-family: $font-mono;
+    box-sizing: border-box;
+
+    &:focus {
+      outline: none;
+      border-color: $color-primary;
+    }
+  }
+
+  &__bucket-select {
+    width: 100%;
+    padding: $space-2;
+    background: $color-bg;
+    border: 1px solid $color-border;
+    border-radius: $radius-sm;
+    color: $color-text;
+    font-size: $font-size-sm;
+    box-sizing: border-box;
+
+    &:focus {
+      outline: none;
+      border-color: $color-primary;
+    }
+  }
+
+  &__hint {
+    margin: 0;
+    color: $color-text-muted;
+    font-size: $font-size-sm;
+  }
+}

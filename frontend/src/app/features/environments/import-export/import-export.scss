@@ -1,0 +1,164 @@
+@use 'tokens' as *;
+
+.import-export {
+  display: flex;
+  flex-direction: column;
+  gap: $space-4;
+
+  &__section {
+    display: flex;
+    flex-direction: column;
+    gap: $space-2;
+    padding: $space-3;
+    background: $color-bg;
+    border: 1px solid $color-border;
+    border-radius: $radius-md;
+  }
+
+  &__section-label {
+    margin: 0;
+    color: $color-text-muted;
+    font-size: $font-size-sm;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+  }
+
+  &__row {
+    display: flex;
+    align-items: center;
+    gap: $space-3;
+    flex-wrap: wrap;
+  }
+
+  &__filepick {
+    display: inline-flex;
+    align-items: center;
+    gap: $space-2;
+    cursor: pointer;
+
+    input {
+      display: none;
+    }
+
+    span {
+      padding: $space-2 $space-3;
+      background: $color-surface-2;
+      border: 1px dashed $color-border;
+      border-radius: $radius-sm;
+      color: $color-text;
+      font-size: $font-size-sm;
+    }
+  }
+
+  &__file-info {
+    display: flex;
+    align-items: center;
+    gap: $space-2;
+  }
+
+  &__file-name {
+    color: $color-text;
+    font-size: $font-size-sm;
+    font-family: $font-mono;
+  }
+
+  &__file-size {
+    color: $color-text-muted;
+    font-size: $font-size-sm;
+  }
+
+  &__file-remove {
+    padding: 2px $space-2;
+    background: transparent;
+    border: 1px solid $color-border;
+    border-radius: $radius-sm;
+    color: $color-text-muted;
+    font-size: $font-size-sm;
+    cursor: pointer;
+
+    &:hover {
+      border-color: $color-danger;
+      color: $color-danger;
+    }
+  }
+
+  &__preview {
+    display: flex;
+    flex-direction: column;
+    gap: $space-1;
+    padding: $space-2;
+    background: $color-surface;
+    border: 1px solid $color-border;
+    border-radius: $radius-sm;
+  }
+
+  &__preview-row {
+    margin: 0;
+    color: $color-text;
+    font-size: $font-size-sm;
+  }
+
+  &__btn {
+    align-self: flex-start;
+    padding: $space-2 $space-3;
+    background: $color-surface-2;
+    border: 1px solid $color-border;
+    border-radius: $radius-sm;
+    color: $color-text;
+    font-size: $font-size-sm;
+    cursor: pointer;
+
+    &:hover:not(:disabled) {
+      border-color: $color-primary;
+    }
+
+    &:disabled {
+      opacity: 0.55;
+      cursor: wait;
+    }
+
+    &--primary {
+      background: $color-primary;
+      border-color: $color-primary;
+      color: $color-primary-contrast;
+      font-weight: 600;
+
+      &:hover:not(:disabled) {
+        background: $color-primary-hover;
+      }
+    }
+  }
+
+  &__hint {
+    margin: 0;
+    color: $color-text-muted;
+    font-size: $font-size-sm;
+  }
+
+  &__error {
+    margin: 0;
+    padding: $space-2 $space-3;
+    background: rgba(248, 113, 113, 0.1);
+    border: 1px solid $color-danger;
+    border-radius: $radius-sm;
+    color: $color-danger;
+    font-size: $font-size-sm;
+  }
+
+  &__result {
+    display: flex;
+    flex-direction: column;
+    gap: $space-1;
+  }
+
+  &__result-row {
+    margin: 0;
+    color: $color-success;
+    font-size: $font-size-sm;
+  }
+
+  &__conflict-note {
+    margin-left: $space-2;
+    color: $color-warning;
+  }
+}
