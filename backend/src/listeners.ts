@@ -104,11 +104,26 @@ export class ListenerManager {
   async stop(uuid: string): Promise<void> {
     const server = this.servers.get(uuid);
     if (server) {
+      (server as any).closeAllConnections?.();
       await new Promise<void>((resolve) => server.close(() => resolve()));
       this.servers.delete(uuid);
     }
     const status = this.statuses.get(uuid);
-    if (status) status.state = 'stopped';
+    if (status) {
+      status.state = 'stopped';
+      delete status.error;
+    } else {
+      const env = this.store.get(uuid);
+      if (env) {
+        this.statuses.set(uuid, {
+          uuid: env.uuid,
+          name: env.name,
+          port: env.port,
+          protocol: env.tlsOptions.enabled ? 'https' : 'http',
+          state: 'stopped',
+        });
+      }
+    }
   }
 
   async stopAll(): Promise<void> {

@@ -1,8 +1,17 @@
 @use 'tokens' as *;
 
+:host {
+  display: flex;
+  flex-direction: column;
+  flex: 1;
+  min-height: 0;
+}
+
 .response-studio {
   display: flex;
   flex-direction: column;
+  flex: 1;
+  min-height: 0;
   gap: var(--s2);
 
   &__subtabs {
@@ -66,40 +75,6 @@
       outline: none;
       border-color: var(--accent);
     }
-  }
-
-  &__latency-wrap {
-    display: inline-flex;
-    align-items: center;
-    gap: var(--s1);
-    height: 28px;
-    padding: 0 var(--s2);
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: var(--r);
-    color: var(--text-muted);
-  }
-
-  &__latency-input {
-    width: 48px;
-    height: 100%;
-    padding: 0;
-    background: transparent;
-    border: none;
-    color: var(--text);
-    font-family: var(--font-mono);
-    font-size: var(--text-xs);
-    text-align: right;
-
-    &:focus {
-      outline: none;
-    }
-  }
-
-  &__latency-unit {
-    color: var(--text-muted);
-    font-size: var(--text-xs);
-    font-family: var(--font-mono);
   }
 
   &__resp-docs-wrap {
@@ -172,44 +147,18 @@
   &__editor-container {
     display: flex;
     flex-direction: column;
+    flex: 1;
+    min-height: 380px;
     background: var(--surface);
     border: 1px solid var(--border);
     border-radius: var(--r);
     overflow: hidden;
   }
 
-  &__editor-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: var(--s1) var(--s2);
-    background: var(--bg);
-    border-bottom: 1px solid var(--border);
-  }
-
-  &__preview-btn {
-    height: 24px;
-    display: inline-flex;
-    align-items: center;
-    gap: var(--s1);
-    padding: 0 var(--s2);
-    background: var(--surface);
-    border: 1px solid var(--border);
-    border-radius: var(--r);
-    color: var(--text);
-    font-size: var(--text-xs);
-    font-weight: 400;
-    cursor: pointer;
-
-    &:hover:not(:disabled) {
-      background: var(--surface-hover);
-      border-color: var(--accent);
-    }
-  }
-
   &__code-wrap {
     display: flex;
-    min-height: 240px;
+    flex: 1;
+    min-height: 0;
     background: var(--bg);
   }
 
@@ -223,6 +172,7 @@
     align-items: flex-end;
     gap: 2px;
     user-select: none;
+    overflow: hidden;
 
     span {
       color: var(--text-muted);
@@ -234,6 +184,8 @@
 
   &__textarea {
     flex: 1;
+    height: 100%;
+    min-height: 0;
     padding: var(--s2);
     background: transparent;
     border: none;
@@ -241,8 +193,9 @@
     font-family: var(--font-mono);
     font-size: var(--text-xs);
     line-height: 20px;
-    resize: vertical;
+    resize: none;
     outline: none;
+    overflow-y: auto;
 
     &::placeholder {
       color: var(--text-muted);
@@ -277,45 +230,6 @@
     color: var(--text-muted);
   }
 
-  &__preview-box {
-    margin: var(--s2);
-    background: var(--bg);
-    border: 1px solid var(--border);
-    border-radius: var(--r);
-    padding: var(--s2);
-  }
-
-  &__preview-header {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    font-size: var(--text-xs);
-    font-weight: 600;
-    color: var(--text);
-    margin-bottom: var(--s1);
-
-    button {
-      background: transparent;
-      border: none;
-      color: var(--text-muted);
-      cursor: pointer;
-      display: inline-flex;
-      align-items: center;
-
-      &:hover {
-        color: var(--text);
-      }
-    }
-  }
-
-  &__preview-output {
-    margin: 0;
-    font-family: var(--font-mono);
-    font-size: var(--text-xs);
-    color: var(--success);
-    max-height: 160px;
-    overflow-y: auto;
-  }
 
   &__panel-content {
     display: flex;

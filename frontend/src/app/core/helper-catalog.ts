@@ -39,12 +39,9 @@ export const HELPER_GROUPS: HelperGroup[] = [
     ],
   },
   {
-    id: 'data',
-    label: 'Data buckets & globals',
+    id: 'globals',
+    label: 'Global variables',
     entries: [
-      { snippet: '{{data "bucket" "path"}}', description: 'Data bucket value by name + path' },
-      { snippet: '{{dataRaw "bucket" "path"}}', description: 'Raw (unparsed) bucket value' },
-      { snippet: '{{setData "bucket" "path" "set" value}}', description: 'Mutate a bucket (set, push, increment, decrement, invert)' },
       { snippet: '{{globalVar "name"}}', description: 'Global variable value' },
       { snippet: '{{setVar "name" value}}', description: 'Set a global variable, returns the new value' },
     ],

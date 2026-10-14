@@ -81,12 +81,15 @@ export function createDataBucket(name = 'items'): DataBucket {
  * A brand-new environment document. Port 3000 is the Mockoon convention;
  * the store re-checks for port conflicts on save (server returns 409).
  */
-export function createEnvironment(name = 'New environment', port = 3000): Environment {
+export function createEnvironment(name = 'New environment', port = 3000, endpointPrefix = ''): Environment {
+  const defaultPrefix = name ? `/${name.toLowerCase().replace(/[^a-z0-9_-]/g, '')}` : '';
+  const rawPrefix = endpointPrefix.trim();
+  const prefix = rawPrefix ? (rawPrefix.startsWith('/') ? rawPrefix : `/${rawPrefix}`) : defaultPrefix;
   return {
     uuid: newUuid(),
     name,
     port,
-    endpointPrefix: '',
+    endpointPrefix: prefix,
     headers: [],
     proxyMode: false,
     proxyHost: '',

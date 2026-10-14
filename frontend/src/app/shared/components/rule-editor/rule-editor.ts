@@ -1,6 +1,6 @@
 import { Component, input, output } from '@angular/core';
 import { RULE_OPERATOR_OPTIONS, RULE_TARGET_OPTIONS, VALUELESS_OPERATORS } from '../../../core/rule-options';
-import { DataBucket, RouteRule, RulesOperator } from '../../../core/types';
+import { RouteRule, RulesOperator } from '../../../core/types';
 import { newUuid } from '../../../core/utils';
 import { SelectValueSync } from '../../directives/select-value-sync.directive';
 import { IconComponent } from '../icon/icon.component';
@@ -27,35 +27,13 @@ import { IconComponent } from '../icon/icon.component';
             }
           </select>
 
-          @if (ruleRow.target === 'data_bucket') {
-            <select
-              class="rule-editor__property"
-              [value]="ruleRow.property"
-              [syncSelectValue]="ruleRow.property"
-              (change)="setField(ruleRow, 'property', $event)"
-              aria-label="Bucket name"
-            >
-              <option value="" disabled>Select bucket…</option>
-              @for (bucket of bucketsInput(); track bucket.uuid) {
-                <option [value]="bucket.uuid">{{ bucket.name }}</option>
-              }
-            </select>
-            <input
-              class="rule-editor__modifier"
-              type="text"
-              placeholder="path in bucket (optional)"
-              [value]="ruleRow.modifier"
-              (change)="setField(ruleRow, 'modifier', $event)"
-            />
-          } @else {
-            <input
-              class="rule-editor__property"
-              type="text"
-              placeholder="{{ propertyPlaceholder(ruleRow.target) }}"
-              [value]="ruleRow.property"
-              (change)="setField(ruleRow, 'property', $event)"
-            />
-          }
+          <input
+            class="rule-editor__property"
+            type="text"
+            placeholder="{{ propertyPlaceholder(ruleRow.target) }}"
+            [value]="ruleRow.property"
+            (change)="setField(ruleRow, 'property', $event)"
+          />
 
           <select
             class="rule-editor__operator"
@@ -116,7 +94,6 @@ import { IconComponent } from '../icon/icon.component';
 export class RuleEditor {
   readonly rulesInput = input<RouteRule[]>([]);
   readonly operatorInput = input<RulesOperator>('AND');
-  readonly bucketsInput = input<DataBucket[]>([]);
   readonly rulesChange = output<RouteRule[]>();
   readonly operatorChange = output<RulesOperator>();
 
@@ -136,7 +113,6 @@ export class RuleEditor {
       cookie: 'cookie name',
       global_var: 'variable name',
       request_number: '',
-      data_bucket: '',
     };
     return placeholderHints[target] ?? 'property name';
   }

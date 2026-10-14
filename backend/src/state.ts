@@ -97,7 +97,6 @@ export class Store {
     const prevRuntime = this.runtimes.get(uuid);
     const needsListenerRestart =
       current.port !== stamped.port ||
-      current.endpointPrefix !== stamped.endpointPrefix ||
       current.tlsOptions.enabled !== stamped.tlsOptions.enabled ||
       current.tlsOptions.certPath !== stamped.tlsOptions.certPath ||
       current.tlsOptions.keyPath !== stamped.tlsOptions.keyPath;
@@ -129,8 +128,12 @@ export class Store {
     if (this.envs.has(doc.uuid)) {
       return { ok: false, error: 'conflict', message: `Environment ${doc.uuid} already exists` };
     }
+    const defaultPrefix = doc.name ? `/${doc.name.toLowerCase().replace(/[^a-z0-9_-]/g, '')}` : '';
+    const rawPrefix = doc.endpointPrefix?.trim();
+    const prefix = rawPrefix ? (rawPrefix.startsWith('/') ? rawPrefix : `/${rawPrefix}`) : defaultPrefix;
     const stamped: Environment = {
       ...doc,
+      endpointPrefix: prefix,
       version: 1,
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),

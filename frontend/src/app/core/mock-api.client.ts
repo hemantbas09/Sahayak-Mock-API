@@ -105,6 +105,14 @@ export class MockApiClient {
     return this.call(this.httpClient.post(`${API_BASE}/environments/${environmentUuid}/duplicate`, {}));
   }
 
+  startEnvironment(environmentUuid: string): Promise<{ success: boolean; status?: unknown }> {
+    return this.call(this.httpClient.post(`${API_BASE}/environments/${environmentUuid}/start`, {}));
+  }
+
+  stopEnvironment(environmentUuid: string): Promise<{ success: boolean; status?: unknown }> {
+    return this.call(this.httpClient.post(`${API_BASE}/environments/${environmentUuid}/stop`, {}));
+  }
+
   // --- import / export ----------------------------------------------------
 
   /** Upload a Mockoon JSON or OpenAPI v3 file (multipart, field "file"). */

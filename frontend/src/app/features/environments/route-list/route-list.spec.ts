@@ -43,15 +43,6 @@ describe('RouteList', () => {
     expect(emittedSelections).toEqual([addedRoute?.uuid]);
   });
 
-  it('adds a CRUD route with a databucket response', () => {
-    const { fixture, emittedRoutes } = buildFixture([]);
-    const addButtons = fixture.nativeElement.querySelectorAll('.route-list__add');
-    (addButtons[1] as HTMLButtonElement).click();
-    const addedRoute = emittedRoutes.at(-1)?.[0];
-    expect(addedRoute?.type).toBe('crud');
-    expect(addedRoute?.responses[0]?.bodyType).toBe('DATABUCKET');
-  });
-
   it('moves a route down and emits the reordered list', () => {
     const firstRoute = createHttpRoute('get', '/first');
     const secondRoute = createHttpRoute('get', '/second');

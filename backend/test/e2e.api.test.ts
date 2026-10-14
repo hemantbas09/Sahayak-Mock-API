@@ -250,6 +250,34 @@ describe('config API', () => {
     expect(del.status).toBe(200);
   });
 
+  it('stops and starts an environment listener (active/paused toggle)', async () => {
+    // Stop the listener
+    const stopRes = await request(app)
+      .post('/api/environments/env-test/stop')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(stopRes.status).toBe(200);
+    expect(stopRes.body.success).toBe(true);
+    expect(stopRes.body.status.state).toBe('stopped');
+
+    // List shows 'stopped' (Paused)
+    const list1 = await request(app).get('/api/environments').set('Authorization', `Bearer ${adminToken}`);
+    const envSummary1 = list1.body.find((e: { uuid: string }) => e.uuid === 'env-test');
+    expect(envSummary1.listener).toBe('stopped');
+
+    // Start the listener back up
+    const startRes = await request(app)
+      .post('/api/environments/env-test/start')
+      .set('Authorization', `Bearer ${adminToken}`);
+    expect(startRes.status).toBe(200);
+    expect(startRes.body.success).toBe(true);
+    expect(startRes.body.status.state).toBe('listening');
+
+    // List shows 'listening' (Active)
+    const list2 = await request(app).get('/api/environments').set('Authorization', `Bearer ${adminToken}`);
+    const envSummary2 = list2.body.find((e: { uuid: string }) => e.uuid === 'env-test');
+    expect(envSummary2.listener).toBe('listening');
+  });
+
   it('reports health in /api/status', async () => {
     const res = await request(app).get('/api/status');
     expect(res.status).toBe(200);

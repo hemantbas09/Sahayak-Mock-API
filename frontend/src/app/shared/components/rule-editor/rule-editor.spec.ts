@@ -1,6 +1,6 @@
 import { TestBed } from '@angular/core/testing';
 import { RuleEditor } from './rule-editor';
-import { DataBucket, RouteRule } from '../../../core/types';
+import { RouteRule } from '../../../core/types';
 
 describe('RuleEditor', () => {
   const sampleRule: RouteRule = {
@@ -13,14 +13,11 @@ describe('RuleEditor', () => {
     value: 'gold',
   };
 
-  const sampleBuckets: DataBucket[] = [{ uuid: 'bucket-1', name: 'items', content: '[]' }];
-
   function buildFixture(initialRules: RouteRule[] = []) {
     const emittedRules: RouteRule[][] = [];
     const emittedOperators: string[] = [];
     const fixture = TestBed.createComponent(RuleEditor);
     fixture.componentRef.setInput('rulesInput', initialRules);
-    fixture.componentRef.setInput('bucketsInput', sampleBuckets);
     // The component is controlled: echo every emission back into the inputs,
     // exactly as the real parent (response-editor) does.
     fixture.componentInstance.rulesChange.subscribe((nextRules) => {

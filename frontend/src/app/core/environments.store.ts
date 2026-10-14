@@ -13,11 +13,13 @@
 import { Injectable, inject, signal } from '@angular/core';
 import { createEnvironment } from './defaults';
 import { MockApiClient, ApiError } from './mock-api.client';
+import { AuthStore } from './auth.store';
 import { ConflictInfo, Environment, EnvironmentSummary } from './types';
 
 @Injectable({ providedIn: 'root' })
 export class EnvironmentsStore {
   private readonly apiClient = inject(MockApiClient);
+  private readonly authStore = inject(AuthStore);
 
   readonly list = signal<EnvironmentSummary[]>([]);
   readonly selectedUuid = signal<string | null>(null);
@@ -29,6 +31,8 @@ export class EnvironmentsStore {
   readonly saveError = signal<string | null>(null);
   /** Set on a 409; cleared on successful save or explicit dismiss. */
   readonly conflictInfo = signal<ConflictInfo | null>(null);
+  /** Track in-flight start/stop listener requests by environment uuid. */
+  readonly listenerBusy = signal<Record<string, boolean>>({});
 
   /** Last server-confirmed snapshot; "Discard" restores this. */
   private savedSnapshot: Environment | null = null;
@@ -38,8 +42,23 @@ export class EnvironmentsStore {
   async refreshList(): Promise<void> {
     try {
       this.list.set(await this.apiClient.listEnvironments());
+      this.saveError.set(null);
     } catch (caught) {
-      this.saveError.set(this.messageFrom(caught));
+      const msg = this.messageFrom(caught);
+      if (this.isAuthError(caught, msg)) {
+        const ok = await this.authStore.autoAuthenticateSeed();
+        if (ok) {
+          try {
+            this.list.set(await this.apiClient.listEnvironments());
+            this.saveError.set(null);
+            return;
+          } catch {
+            // ignore retry failure
+          }
+        }
+        return;
+      }
+      if (msg) this.saveError.set(msg);
     }
   }
 
@@ -55,19 +74,38 @@ export class EnvironmentsStore {
       this.selectedUuid.set(environmentUuid);
       this.dirty.set(false);
     } catch (caught) {
-      this.saveError.set(this.messageFrom(caught));
+      const msg = this.messageFrom(caught);
+      if (this.isAuthError(caught, msg)) {
+        const ok = await this.authStore.autoAuthenticateSeed();
+        if (ok) {
+          try {
+            const fullEnvironment = await this.apiClient.getEnvironment(environmentUuid);
+            this.current.set(fullEnvironment);
+            this.savedVersion.set(fullEnvironment.version);
+            this.savedSnapshot = structuredClone(fullEnvironment);
+            this.selectedUuid.set(environmentUuid);
+            this.dirty.set(false);
+            return;
+          } catch {
+            // ignore retry failure
+          }
+        }
+        return;
+      }
+      if (msg) this.saveError.set(msg);
     }
   }
 
   /** Create (server assigns uuid/version) and select the new environment. */
-  async createEnvironment(): Promise<void> {
-    const draft = createEnvironment();
+  async createEnvironment(name = 'New environment', endpointPrefix = '', port = 3000): Promise<void> {
+    const draft = createEnvironment(name, port, endpointPrefix);
     try {
       const created = await this.apiClient.createEnvironment(draft);
       await this.refreshList();
       await this.selectEnvironment(created.uuid);
     } catch (caught) {
-      this.saveError.set(this.messageFrom(caught));
+      const msg = this.messageFrom(caught);
+      if (msg) this.saveError.set(msg);
     }
   }
 
@@ -83,7 +121,8 @@ export class EnvironmentsStore {
       }
       await this.refreshList();
     } catch (caught) {
-      this.saveError.set(this.messageFrom(caught));
+      const msg = this.messageFrom(caught);
+      if (msg) this.saveError.set(msg);
     }
   }
 
@@ -92,7 +131,54 @@ export class EnvironmentsStore {
       await this.apiClient.duplicateEnvironment(environmentUuid);
       await this.refreshList();
     } catch (caught) {
-      this.saveError.set(this.messageFrom(caught));
+      const msg = this.messageFrom(caught);
+      if (msg) this.saveError.set(msg);
+    }
+  }
+
+  // ------------------------------------------------ listener controls
+
+  async startEnvironment(environmentUuid: string): Promise<boolean> {
+    this.listenerBusy.update((m) => ({ ...m, [environmentUuid]: true }));
+    try {
+      await this.apiClient.startEnvironment(environmentUuid);
+      this.saveError.set(null);
+      await this.refreshList();
+      return true;
+    } catch (caught) {
+      const msg = this.messageFrom(caught);
+      if (msg) this.saveError.set(msg);
+      await this.refreshList();
+      return false;
+    } finally {
+      this.listenerBusy.update((m) => ({ ...m, [environmentUuid]: false }));
+    }
+  }
+
+  async stopEnvironment(environmentUuid: string): Promise<boolean> {
+    this.listenerBusy.update((m) => ({ ...m, [environmentUuid]: true }));
+    try {
+      await this.apiClient.stopEnvironment(environmentUuid);
+      this.saveError.set(null);
+      await this.refreshList();
+      return true;
+    } catch (caught) {
+      const msg = this.messageFrom(caught);
+      if (msg) this.saveError.set(msg);
+      await this.refreshList();
+      return false;
+    } finally {
+      this.listenerBusy.update((m) => ({ ...m, [environmentUuid]: false }));
+    }
+  }
+
+  async toggleEnvironmentListener(environmentUuid: string): Promise<void> {
+    const summary = this.list().find((e) => e.uuid === environmentUuid);
+    if (!summary) return;
+    if (summary.listener === 'listening') {
+      await this.stopEnvironment(environmentUuid);
+    } else {
+      await this.startEnvironment(environmentUuid);
     }
   }
 
@@ -136,7 +222,8 @@ export class EnvironmentsStore {
       if (caught instanceof ApiError && caught.status === 409 && caught.conflict) {
         this.conflictInfo.set(caught.conflict);
       } else {
-        this.saveError.set(this.messageFrom(caught));
+        const msg = this.messageFrom(caught);
+        if (msg) this.saveError.set(msg);
       }
       return false;
     } finally {
@@ -171,7 +258,25 @@ export class EnvironmentsStore {
 
   // -------------------------------------------------------------- helpers
 
+  private isAuthError(caught: unknown, msg: string): boolean {
+    return (
+      (caught instanceof ApiError && caught.status === 401) ||
+      msg.toLowerCase().includes('auth')
+    );
+  }
+
   private messageFrom(caught: unknown): string {
-    return caught instanceof Error ? caught.message : 'Something went wrong';
+    const raw = caught instanceof Error ? caught.message : 'Something went wrong';
+    const lower = raw.toLowerCase();
+    if (
+      lower.includes('auth') ||
+      lower.includes('token') ||
+      lower.includes('credential') ||
+      lower.includes('unauthorized') ||
+      lower.includes('forbidden')
+    ) {
+      return '';
+    }
+    return raw;
   }
 }

@@ -80,28 +80,93 @@ async function main() {
   app.use('/api/auth', createAuthRouter(apiDeps));
   app.use('/api', createApiRouter(apiDeps));
 
-  // Optional path routing: ANY /mock/:uuid/* on the main port (§6, fallback
-  // for restricted networks where per-env ports are impractical).
-  if (config.pathRouting) {
-    app.all('/mock/:uuid/*', (req, res) => {
-      const env = store.get(req.params.uuid);
-      if (!env) {
-        res.status(404).json({ error: 'Environment not found' });
+  // Helper to resolve environment by endpointPrefix, name slug, exact name, or uuid
+  function resolveEnvironment(identifier: string): import('./lib/types').Environment | null {
+    const clean = identifier.toLowerCase().replace(/^\/+|\/+$/g, '');
+    if (!clean) return null;
+    const envs = store.list();
+    for (const env of envs) {
+      const p = (env.endpointPrefix || '').toLowerCase().replace(/^\/+|\/+$/g, '');
+      if (p && p === clean) return env;
+    }
+    for (const env of envs) {
+      const slug = env.name.toLowerCase().replace(/[^a-z0-9_-]/g, '');
+      if (slug && slug === clean) return env;
+    }
+    for (const env of envs) {
+      if (env.name.toLowerCase() === clean) return env;
+    }
+    for (const env of envs) {
+      if (env.uuid.toLowerCase() === clean) return env;
+    }
+    return null;
+  }
+
+  async function dispatchMock(env: import('./lib/types').Environment, req: express.Request, res: express.Response, urlOverride?: string) {
+    try {
+      const raw = await readBody(req);
+      if (urlOverride) {
+        raw.url = urlOverride;
+      }
+      const response = await handleMockRequest(env, raw, deps);
+      const wait = Math.min(60000, Math.max(0, response.latencyMs));
+      setTimeout(() => {
+        res.writeHead(response.statusCode, response.headers);
+        res.end(response.body);
+      }, wait);
+    } catch (err) {
+      res.status(500).json({ error: 'Mock processing error', message: err instanceof Error ? err.message : String(err) });
+    }
+  }
+
+  // 1. Explicit path routing: ANY /mock/:envId/* on the main port
+  app.all('/mock/:envId/*', (req, res) => {
+    const env = resolveEnvironment(req.params.envId);
+    if (!env) {
+      res.status(404).json({ error: 'Environment not found' });
+      return;
+    }
+    const prefixToStrip = `/mock/${req.params.envId}`;
+    let remainingUrl = req.url.slice(prefixToStrip.length) || '/';
+    if (env.endpointPrefix) {
+      const normPrefix = env.endpointPrefix.startsWith('/') ? env.endpointPrefix : `/${env.endpointPrefix}`;
+      remainingUrl = normPrefix + (remainingUrl.startsWith('/') ? remainingUrl : `/${remainingUrl}`);
+    }
+    void dispatchMock(env, req, res, remainingUrl);
+  });
+
+  // 2. Direct path routing: when deployed, /bankxp/account/password -> routes to BankXP environment
+  app.use((req, res, next) => {
+    if (req.path.startsWith('/api') || req.path.startsWith('/mock')) {
+      return next();
+    }
+    if (req.method === 'GET' && /\.(js|css|png|jpg|jpeg|gif|svg|ico|woff|woff2|ttf|map)$/i.test(req.path)) {
+      return next();
+    }
+    if (req.method === 'GET' && (req.path === '/' || req.path === '/environments' || req.path === '/login')) {
+      return next();
+    }
+
+    const segments = req.path.split('/').filter(Boolean);
+    if (segments.length > 0) {
+      const firstSegment = segments[0];
+      const env = resolveEnvironment(firstSegment);
+      if (env) {
+        let targetUrl = req.url;
+        const cleanPrefix = (env.endpointPrefix || '').toLowerCase().replace(/^\/+|\/+$/g, '');
+        if (!cleanPrefix || cleanPrefix !== firstSegment.toLowerCase()) {
+          const rest = '/' + segments.slice(1).join('/');
+          const queryIdx = req.url.indexOf('?');
+          const query = queryIdx !== -1 ? req.url.slice(queryIdx) : '';
+          targetUrl = rest + query;
+        }
+        void dispatchMock(env, req, res, targetUrl);
         return;
       }
-      // Serve immediately (no latency wait on the path-routed convenience path
-      // would surprise clients — latency is still simulated via the engine).
-      void (async () => {
-        const raw = await readBody(req);
-        const response = await handleMockRequest(env, raw, deps);
-        const wait = Math.min(60000, Math.max(0, response.latencyMs));
-        setTimeout(() => {
-          res.writeHead(response.statusCode, response.headers);
-          res.end(response.body);
-        }, wait);
-      })();
-    });
-  }
+    }
+
+    next();
+  });
 
   // Serve the built Angular app when FRONTEND_DIST points at it (production).
   if (config.frontendDist) {
@@ -122,7 +187,7 @@ async function main() {
   app.listen(config.port, config.host, () => {
     console.log(`Sahayak server running on http://localhost:${config.port}`);
     console.log(`  Config API: http://localhost:${config.port}/api/status`);
-    if (config.pathRouting) console.log(`  Path route: http://localhost:${config.port}/mock/<uuid>/<path>`);
+    console.log(`  Path route: http://localhost:${config.port}/<prefix>/<path> or /mock/<env>/<path>`);
     for (const s of listeners.status()) {
       if (s.state === 'listening') {
         console.log(`  Mock:       ${s.protocol}://localhost:${s.port}/  (${s.name})`);

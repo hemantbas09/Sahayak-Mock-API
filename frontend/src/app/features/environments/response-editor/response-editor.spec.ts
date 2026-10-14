@@ -1,6 +1,6 @@
 import { ComponentFixture, TestBed } from '@angular/core/testing';
 import { ResponseEditor } from './response-editor';
-import { createRouteResponse, createDataBucket } from '../../../core/defaults';
+import { createRouteResponse } from '../../../core/defaults';
 import { MockApiClient } from '../../../core/mock-api.client';
 import { RouteResponse } from '../../../core/types';
 
@@ -18,14 +18,11 @@ class MockApiStub {
 describe('ResponseEditor', () => {
   let apiStub: MockApiStub;
 
-  function buildFixture(initialResponse: RouteResponse | null, bucketNames: string[] = []) {
+  function buildFixture(initialResponse: RouteResponse | null) {
     const emittedResponses: RouteResponse[] = [];
     const fixture: ComponentFixture<ResponseEditor> = TestBed.createComponent(ResponseEditor);
     fixture.componentRef.setInput('responseInput', initialResponse);
     fixture.componentRef.setInput('environmentUuidInput', 'env-1');
-    if (bucketNames.length > 0) {
-      fixture.componentRef.setInput('bucketsInput', bucketNames.map((bucketName) => createDataBucket(bucketName)));
-    }
     // Controlled: echo emissions back into the input.
     fixture.componentInstance.responseChange.subscribe((nextResponse) => {
       emittedResponses.push(nextResponse);
@@ -94,20 +91,6 @@ describe('ResponseEditor', () => {
     // The INLINE textarea is gone; the FILE input is shown.
     expect(fixture.nativeElement.querySelector('.response-editor__body-textarea')).toBeNull();
     expect(fixture.nativeElement.querySelector('.response-editor__file-input')).not.toBeNull();
-  });
-
-  it('selects a data bucket by uuid', () => {
-    const sourceResponse = createRouteResponse();
-    sourceResponse.bodyType = 'DATABUCKET';
-    const { fixture, emittedResponses } = buildFixture(sourceResponse, ['orders', 'users']);
-    const bucketSelect = fixture.nativeElement.querySelector('.response-editor__bucket-select') as HTMLSelectElement;
-    const usersOption = [...bucketSelect.options].find((option) => option.textContent === 'users');
-    expect(usersOption).toBeDefined();
-    const usersUuid = usersOption?.value ?? '';
-    expect(usersUuid).not.toBe('');
-    bucketSelect.value = usersUuid;
-    bucketSelect.dispatchEvent(new Event('change'));
-    expect(emittedResponses.at(-1)?.databucketId).toBe(usersUuid);
   });
 
   it('inserts a helper snippet at the caret and commits the result', () => {

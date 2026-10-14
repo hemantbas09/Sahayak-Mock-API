@@ -13,7 +13,6 @@ export const RULE_TARGET_OPTIONS: { id: RuleTarget; label: string; hint: string 
   { id: 'cookie', label: 'Cookie', hint: 'Cookie name' },
   { id: 'global_var', label: 'Global var', hint: 'Name of a global variable' },
   { id: 'request_number', label: 'Request number', hint: '1-based per-route counter' },
-  { id: 'data_bucket', label: 'Data bucket', hint: 'Bucket name + inner path' },
 ];
 
 export const RULE_OPERATOR_OPTIONS: { id: string; label: string }[] = [

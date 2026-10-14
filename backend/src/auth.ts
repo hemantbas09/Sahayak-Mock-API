@@ -54,18 +54,16 @@ export function hasRole(userRole: UserRole | undefined, required: UserRole): boo
 export function authMiddleware(cfg: AuthConfig, secret: string) {
   return (req: Request, res: Response, next: NextFunction) => {
     if (!cfg.enabled) {
-      req.user = { email: 'dev@local', role: 'admin' as UserRole };
+      req.user = { email: 'admin@sahayak.local', role: 'admin' as UserRole };
       return next();
     }
     const header = req.headers.authorization;
     if (!header || !header.startsWith('Bearer ')) {
-      res.status(401).json({ error: 'Authentication required' });
-      return;
+      return res.status(401).json({ error: 'unauthorized', message: 'Missing Bearer token' });
     }
     const payload = verifyToken(header.slice(7), secret);
     if (!payload) {
-      res.status(401).json({ error: 'Invalid or expired token' });
-      return;
+      return res.status(401).json({ error: 'unauthorized', message: 'Invalid token' });
     }
     req.user = payload;
     next();

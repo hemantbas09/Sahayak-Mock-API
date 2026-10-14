@@ -155,6 +155,37 @@ export function createApiRouter(deps: ApiDeps): Router {
     res.status(201).json({ success: true, version: result.version });
   });
 
+  // --- listener start / stop (Active vs Paused toggle) ---
+
+  router.post('/environments/:uuid/start', authMw, requireRole('editor'), async (req, res) => {
+    const env = store.get(req.params.uuid);
+    if (!env) {
+      res.status(404).json({ error: 'Environment not found' });
+      return;
+    }
+    await listeners.start(env);
+    const status = listeners.status().find((s) => s.uuid === env.uuid);
+    if (status?.state === 'failed') {
+      res.status(409).json({
+        error: status.error || `Port ${env.port} is already in use or unavailable`,
+        status,
+      });
+      return;
+    }
+    res.json({ success: true, status });
+  });
+
+  router.post('/environments/:uuid/stop', authMw, requireRole('editor'), async (req, res) => {
+    const env = store.get(req.params.uuid);
+    if (!env) {
+      res.status(404).json({ error: 'Environment not found' });
+      return;
+    }
+    await listeners.stop(env.uuid);
+    const status = listeners.status().find((s) => s.uuid === env.uuid);
+    res.json({ success: true, status });
+  });
+
   // --- import / export ---
 
   router.post('/import', authMw, requireRole('editor'), upload.single('file'), async (req, res) => {

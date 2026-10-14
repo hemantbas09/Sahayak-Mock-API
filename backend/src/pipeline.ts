@@ -74,7 +74,8 @@ export async function handleMockRequest(
   const cookies = parseCookies(raw.headers.cookie);
   const query = parseQueryString(queryString);
 
-  const pathAfterPrefix = stripPrefix(env.endpointPrefix, decodedPath);
+  const effectivePrefix = env.endpointPrefix || (env.name ? `/${env.name.toLowerCase().replace(/[^a-z0-9_-]/g, '')}` : '');
+  const pathAfterPrefix = stripPrefix(effectivePrefix, decodedPath);
 
   // --- CORS preflight: answered 204 without matching/logging (Mockoon) ---
   if (raw.method.toLowerCase() === 'options' && raw.headers['access-control-request-method']) {

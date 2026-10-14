@@ -9,14 +9,19 @@ import { AfterViewChecked, Directive, ElementRef, inject, input } from '@angular
  * in the DOM, and keeps it in sync on later change-detection passes.
  * Usage: `<select [syncSelectValue]="someSignal()">…</select>`
  */
-@Directive({ selector: 'select[syncSelectValue]' })
+@Directive({
+  selector: 'select[syncSelectValue]',
+  standalone: true,
+})
 export class SelectValueSync implements AfterViewChecked {
   private readonly selectElementRef = inject<ElementRef<HTMLSelectElement>>(ElementRef);
-  readonly syncSelectValue = input('');
+  readonly syncSelectValue = input<string | number | null | undefined>('');
 
   ngAfterViewChecked(): void {
     const selectElement = this.selectElementRef.nativeElement;
-    const desiredValue = this.syncSelectValue();
+    const rawValue = this.syncSelectValue();
+    if (rawValue === null || rawValue === undefined) return;
+    const desiredValue = String(rawValue);
     const wantedOption = selectElement.querySelector(`option[value="${desiredValue}"]`);
     if (wantedOption !== null && selectElement.value !== desiredValue) {
       selectElement.value = desiredValue;

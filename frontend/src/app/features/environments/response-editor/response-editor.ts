@@ -1,4 +1,5 @@
 import {
+  ChangeDetectorRef,
   Component,
   ElementRef,
   computed,
@@ -9,19 +10,18 @@ import {
   signal,
   viewChild,
 } from '@angular/core';
-import { DataBucket, RouteResponse, RouteRule, RulesOperator } from '../../../core/types';
+import { RouteResponse, RouteRule, RulesOperator } from '../../../core/types';
 import { MockApiClient } from '../../../core/mock-api.client';
 import { KvList } from '../../../shared/components/kv-list/kv-list';
 import { RuleEditor } from '../../../shared/components/rule-editor/rule-editor';
-import { HelperPicker } from '../../../shared/components/helper-picker/helper-picker';
-import { IconComponent } from '../../../shared/components/icon/icon.component';
+import { SelectValueSync } from '../../../shared/directives/select-value-sync.directive';
 
 /**
  * Modern developer-tool styled response editor.
  */
 @Component({
   selector: 'app-response-editor',
-  imports: [KvList, RuleEditor, HelperPicker, IconComponent],
+  imports: [KvList, RuleEditor, SelectValueSync],
   template: `
     @if (responseInput(); as activeResponse) {
       <div class="response-studio">
@@ -68,31 +68,20 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
               <select
                 class="response-studio__status-select"
                 [value]="activeResponse.statusCode"
+                [syncSelectValue]="activeResponse.statusCode"
                 (change)="setStatusField($event)"
               >
-                <option [value]="200">200 - OK</option>
-                <option [value]="201">201 - Created</option>
-                <option [value]="204">204 - No Content</option>
-                <option [value]="400">400 - Bad Request</option>
-                <option [value]="401">401 - Unauthorized</option>
-                <option [value]="403">403 - Forbidden</option>
-                <option [value]="404">404 - Not Found</option>
-                <option [value]="409">409 - Conflict</option>
-                <option [value]="500">500 - Internal Server Error</option>
+                @for (status of standardStatusCodes; track status.code) {
+                  <option [value]="status.code" [selected]="activeResponse.statusCode === status.code">
+                    {{ status.text }}
+                  </option>
+                }
+                @if (!isStandardStatus(activeResponse.statusCode)) {
+                  <option [value]="activeResponse.statusCode" selected>
+                    {{ activeResponse.statusCode }} - Custom
+                  </option>
+                }
               </select>
-            </div>
-
-            <div class="response-studio__latency-wrap">
-              <app-icon name="clock" [size]="12" />
-              <input
-                type="number"
-                class="response-studio__latency-input"
-                min="0"
-                max="60000"
-                [value]="activeResponse.latency"
-                (change)="setLatencyField($event)"
-              />
-              <span class="response-studio__latency-unit">ms</span>
             </div>
 
             <div class="response-studio__resp-docs-wrap">
@@ -129,14 +118,6 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
               <button
                 type="button"
                 class="response-studio__body-pill"
-                [class.response-studio__body-pill--active]="activeResponse.bodyType === 'DATABUCKET'"
-                (click)="setBodyTypeDirect('DATABUCKET')"
-              >
-                Data bucket
-              </button>
-              <button
-                type="button"
-                class="response-studio__body-pill"
                 [class.response-studio__body-pill--active]="activeResponse.bodyType === 'NONE'"
                 (click)="setBodyTypeDirect('NONE')"
               >
@@ -149,25 +130,6 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
           @switch (activeResponse.bodyType) {
             @case ('INLINE') {
               <div class="response-studio__editor-container">
-                <div class="response-studio__editor-header">
-                  <app-helper-picker (insertSnippet)="insertSnippetIntoBody($event)" />
-                  <div class="response-studio__editor-header-actions">
-                    <button
-                      type="button"
-                      class="response-studio__preview-btn"
-                      [disabled]="previewing()"
-                      (click)="previewBody()"
-                    >
-                      @if (previewing()) {
-                        Rendering…
-                      } @else {
-                        <app-icon name="play" [size]="12" />
-                        <span>Preview</span>
-                      }
-                    </button>
-                  </div>
-                </div>
-
                 <div class="response-studio__code-wrap">
                   <div class="response-studio__line-numbers">
                     @for (line of lineNumbers(); track line) {
@@ -177,7 +139,6 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
                   <textarea
                     #bodyTextarea
                     class="response-studio__textarea"
-                    rows="14"
                     spellcheck="false"
                     placeholder="Enter JSON response or template..."
                     [value]="bodySeedValue()"
@@ -191,24 +152,6 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
                   </button>
                   <span class="response-studio__content-type">application/json</span>
                 </div>
-
-                @if (previewOutput(); as previewResult) {
-                  <div class="response-studio__preview-box">
-                    <div class="response-studio__preview-header">
-                      <span>Rendered output</span>
-                      <button type="button" (click)="previewOutput.set(null)">
-                        <app-icon name="close" [size]="12" />
-                      </button>
-                    </div>
-                    <pre class="response-studio__preview-output">{{ previewResult }}</pre>
-                  </div>
-                }
-                @if (previewWarning(); as warning) {
-                  <div class="response-studio__alert response-studio__alert--warn">{{ warning }}</div>
-                }
-                @if (previewError(); as error) {
-                  <div class="response-studio__alert response-studio__alert--err">{{ error }}</div>
-                }
               </div>
             }
 
@@ -224,25 +167,6 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
                 />
                 <p class="response-studio__hint">
                   The file will be read from the filesystem and served directly.
-                </p>
-              </div>
-            }
-
-            @case ('DATABUCKET') {
-              <div class="response-studio__panel-content">
-                <label class="response-studio__label">Select Data Bucket</label>
-                <select
-                  class="response-studio__select"
-                  [value]="activeResponse.databucketId"
-                  (change)="setStringField('databucketId', $event)"
-                >
-                  <option value="" disabled>Select bucket…</option>
-                  @for (bucket of bucketsInput(); track bucket.uuid) {
-                    <option [value]="bucket.uuid">{{ bucket.name }}</option>
-                  }
-                </select>
-                <p class="response-studio__hint">
-                  The data bucket's content will be served directly as the response body.
                 </p>
               </div>
             }
@@ -271,7 +195,6 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
             <app-rule-editor
               [rulesInput]="activeResponse.rules"
               [operatorInput]="activeResponse.rulesOperator"
-              [bucketsInput]="bucketsInput()"
               (rulesChange)="setRules($event)"
               (operatorChange)="setRulesOperator($event)"
             />
@@ -307,11 +230,11 @@ import { IconComponent } from '../../../shared/components/icon/icon.component';
   styleUrl: './response-editor.scss',
 })
 export class ResponseEditor {
+  private readonly cdr = inject(ChangeDetectorRef);
   private readonly apiClient = inject(MockApiClient);
   readonly bodyTextarea = viewChild<ElementRef<HTMLTextAreaElement>>('bodyTextarea');
 
   readonly responseInput = input<RouteResponse | null>(null);
-  readonly bucketsInput = input<DataBucket[]>([]);
   readonly responseChange = output<RouteResponse>();
   readonly environmentUuidInput = input<string>('');
 
@@ -325,6 +248,34 @@ export class ResponseEditor {
   private seedKey: string | null = null;
   private bodySeedText = '';
   private previewedSeedKey: string | null = null;
+
+  readonly standardStatusCodes = [
+    { code: 200, text: '200 - OK' },
+    { code: 201, text: '201 - Created' },
+    { code: 202, text: '202 - Accepted' },
+    { code: 204, text: '204 - No Content' },
+    { code: 301, text: '301 - Moved Permanently' },
+    { code: 302, text: '302 - Found' },
+    { code: 304, text: '304 - Not Modified' },
+    { code: 400, text: '400 - Bad Request' },
+    { code: 401, text: '401 - Unauthorized' },
+    { code: 403, text: '403 - Forbidden' },
+    { code: 404, text: '404 - Not Found' },
+    { code: 405, text: '405 - Method Not Allowed' },
+    { code: 406, text: '406 - Not Acceptable' },
+    { code: 409, text: '409 - Conflict' },
+    { code: 410, text: '410 - Gone' },
+    { code: 422, text: '422 - Unprocessable Entity' },
+    { code: 429, text: '429 - Too Many Requests' },
+    { code: 500, text: '500 - Internal Server Error' },
+    { code: 502, text: '502 - Bad Gateway' },
+    { code: 503, text: '503 - Service Unavailable' },
+    { code: 504, text: '504 - Gateway Timeout' },
+  ];
+
+  isStandardStatus(code: number): boolean {
+    return this.standardStatusCodes.some((s) => s.code === code);
+  }
 
   readonly lineNumbers = computed(() => {
     const text = this.bodyContent();
@@ -342,8 +293,9 @@ export class ResponseEditor {
       }
       if (activeResponse) {
         this.bodyContent.set(activeResponse.body);
+        this.cdr.markForCheck();
       }
-    });
+    }, { allowSignalWrites: true });
   }
 
   bodySeedValue(): string {
@@ -353,7 +305,6 @@ export class ResponseEditor {
     if (this.seedKey !== currentKey) {
       this.seedKey = currentKey;
       this.bodySeedText = activeResponse.body;
-      this.bodyContent.set(activeResponse.body);
     }
     return this.bodySeedText;
   }
@@ -396,7 +347,7 @@ export class ResponseEditor {
     }
   }
 
-  setBodyTypeDirect(bodyType: 'INLINE' | 'FILE' | 'DATABUCKET' | 'NONE'): void {
+  setBodyTypeDirect(bodyType: 'INLINE' | 'FILE' | 'NONE'): void {
     const activeResponse = this.responseInput();
     if (!activeResponse) return;
     this.responseChange.emit({ ...activeResponse, bodyType });
@@ -416,7 +367,7 @@ export class ResponseEditor {
     this.responseChange.emit({ ...activeResponse, latency: val });
   }
 
-  setStringField(field: 'label' | 'filePath' | 'databucketId' | 'body', valueOrEvent: Event | string): void {
+  setStringField(field: 'label' | 'filePath' | 'body', valueOrEvent: Event | string): void {
     const activeResponse = this.responseInput();
     if (!activeResponse) return;
     const rawValue = typeof valueOrEvent === 'string' ? valueOrEvent : (valueOrEvent.target as HTMLInputElement).value;

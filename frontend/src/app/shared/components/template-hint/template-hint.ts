@@ -22,7 +22,7 @@ import { Component, output } from '@angular/core';
           {{ quickSnippet.snippet }}
         </button>
       }
-      <span class="template-hint__more">… or use the 🧩 Helpers button for the full list</span>
+      <span class="template-hint__more">… or use the Template helpers button for the full list</span>
     </div>
   `,
   styleUrl: './template-hint.scss',
@@ -36,6 +36,5 @@ export class TemplateHint {
     { snippet: '{{queryParam "name"}}', description: 'Query value' },
     { snippet: '{{body "field"}}', description: 'Body field' },
     { snippet: '{{header "x-token"}}', description: 'Request header' },
-    { snippet: '{{data "items" "0"}}', description: 'Data bucket value' },
   ];
 }
