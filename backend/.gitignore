@@ -5,3 +5,4 @@ data/
 .env
 .npm-cache/
 *.log
+node_modules/.tmp-*

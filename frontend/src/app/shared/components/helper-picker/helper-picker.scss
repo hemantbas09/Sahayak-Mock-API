@@ -1,0 +1,116 @@
+@use 'tokens' as *;
+
+.helper-picker {
+  position: relative;
+  display: inline-block;
+
+  &__toggle {
+    height: 24px;
+    display: inline-flex;
+    align-items: center;
+    gap: var(--s1);
+    padding: 0 var(--s2);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+    cursor: pointer;
+
+    &:hover,
+    &--open {
+      border-color: var(--accent);
+      color: var(--text);
+    }
+  }
+
+  &__panel {
+    position: absolute;
+    top: calc(100% + var(--s1));
+    right: 0;
+    z-index: 30;
+    width: 380px;
+    max-width: 90vw;
+    display: flex;
+    flex-direction: column;
+    gap: var(--s2);
+    padding: var(--s2);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r-lg);
+    box-shadow: var(--shadow-lg);
+  }
+
+  &__search {
+    height: 28px;
+    padding: 0 var(--s2);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    color: var(--text);
+    font-size: var(--text-xs);
+
+    &:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+  }
+
+  &__results {
+    max-height: 300px;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  &__group-label {
+    margin: var(--s2) 0 0;
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+    font-weight: 600;
+    text-transform: uppercase;
+
+    &:first-child {
+      margin-top: 0;
+    }
+  }
+
+  &__entry {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: var(--s2);
+    align-items: baseline;
+    width: 100%;
+    padding: 3px var(--s2);
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: var(--r);
+    color: var(--text);
+    text-align: left;
+    cursor: pointer;
+
+    &:hover {
+      background: var(--surface-hover);
+      border-color: var(--border);
+    }
+  }
+
+  &__snippet {
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+    color: var(--accent);
+    white-space: nowrap;
+  }
+
+  &__desc {
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+  }
+
+  &__none {
+    margin: var(--s2) 0 0;
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+  }
+}

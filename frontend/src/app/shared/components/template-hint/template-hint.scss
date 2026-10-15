@@ -1,0 +1,37 @@
+@use 'tokens' as *;
+
+.template-hint {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--s1);
+  padding: var(--s2);
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--r);
+
+  &__label {
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+  }
+
+  &__chip {
+    padding: 1px var(--s2);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    color: var(--accent);
+    font-family: var(--font-mono);
+    font-size: var(--text-xs);
+    cursor: pointer;
+
+    &:hover {
+      border-color: var(--accent);
+    }
+  }
+
+  &__more {
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+  }
+}

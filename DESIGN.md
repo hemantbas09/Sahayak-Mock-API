@@ -293,10 +293,13 @@ lib/
   mockoon-schema.ts    # zod schemas for import validation (Mockoon file format)
 ```
 
-> Note: the map above is the full target. The current `backend/` implements the
-> Phase 0–1 subset (single mock path on the main port, flat 3-collection Mongo
-> model, ops protocol) and will converge to this map as the Mockoon-parity work
-> lands (see §10).
+> Note on current layout: `backend/src/` is flattened — `server.ts` (entry),
+> `config.ts`, `state.ts` (Store), `logs.ts`, `api.ts` (config + auth routers),
+> `auth.ts`, `listeners.ts`, `pipeline.ts` (shared request pipeline), `mock/`
+> (pure engine: matcher, rules, templating, crud, buckets, responder, files,
+> proxy, context), `storage/` (contract + Mongo + file), `db/` (connection +
+> models), `lib/` (Mockoon types). The module map above is the target
+> organization; behavior matches it.
 
 ### 4.2 Frontend module map (Angular)
 

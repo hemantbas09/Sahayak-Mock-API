@@ -1,0 +1,788 @@
+<!-- ============================================================== -->
+<!-- Global Top Navigation Bar (Shared across Dashboard and Studio) -->
+<!-- ============================================================== -->
+<header class="sahayak-topbar">
+  <div class="sahayak-topbar__left">
+    <div class="sahayak-topbar__brand" (click)="backToDashboard()" title="Go to Environments Dashboard">
+      <span class="sahayak-topbar__logo-icon">
+        <app-icon name="zap" [size]="14" />
+      </span>
+      <span class="sahayak-topbar__logo-text">Sahayak</span>
+    </div>
+
+    @if (viewMode() === 'studio') {
+      <!-- Studio Breadcrumb -->
+      <div class="sahayak-topbar__breadcrumb">
+        <button type="button" class="sahayak-topbar__breadcrumb-root" (click)="backToDashboard()">
+          <app-icon name="arrow-left" [size]="12" />
+          <span>Environments</span>
+        </button>
+        <span class="sahayak-topbar__breadcrumb-sep">/</span>
+        <select
+          class="sahayak-topbar__env-select"
+          [value]="current()?.uuid"
+          [syncSelectValue]="current()?.uuid"
+          (change)="onBreadcrumbEnvChange($event)"
+          title="Switch environment"
+        >
+          @for (summary of list(); track summary.uuid) {
+            <option [value]="summary.uuid" [selected]="current()?.uuid === summary.uuid">{{ summary.name }}</option>
+          }
+        </select>
+      </div>
+    }
+  </div>
+
+  <div class="sahayak-topbar__right">
+    @if (viewMode() === 'studio') {
+      <input
+        #importFileInput
+        type="file"
+        accept=".json,.yaml,.yml"
+        style="display: none"
+        (change)="onFileSelected($event)"
+      />
+      <button
+        type="button"
+        class="sahayak-topbar__btn"
+        [disabled]="isImporting()"
+        (click)="importFileInput.click()"
+      >
+        {{ isImporting() ? 'Importing…' : 'Import' }}
+      </button>
+
+      @if (current(); as cur) {
+        <button type="button" class="sahayak-topbar__btn" (click)="exportEnvironmentRow(cur)">
+          Export
+        </button>
+        <button
+          type="button"
+          class="sahayak-topbar__btn sahayak-topbar__btn--delete"
+          title="Delete this project"
+          (click)="promptDeleteCurrentProject()"
+        >
+          <app-icon name="trash" [size]="12" />
+          <span>Delete</span>
+        </button>
+      }
+
+      @if (dirty()) {
+        <button type="button" class="sahayak-topbar__btn sahayak-topbar__btn--discard" (click)="discardChanges()">
+          Reject
+        </button>
+        <button
+          type="button"
+          class="sahayak-topbar__btn sahayak-topbar__btn--primary"
+          [disabled]="saving()"
+          (click)="saveCurrent()"
+        >
+          {{ saving() ? 'Saving…' : 'Save' }}
+        </button>
+      }
+    }
+
+    @if (currentUser(); as user) {
+      <div class="sahayak-topbar__user-menu">
+        <button
+          type="button"
+          class="sahayak-topbar__avatar-btn"
+          [class.sahayak-topbar__avatar-btn--active]="showUserDropdown()"
+          (click)="toggleUserDropdown($event)"
+          title="Account: {{ user.username || user.email }}"
+        >
+          <span class="sahayak-topbar__avatar-circle">
+            {{ getUserInitial() }}
+          </span>
+        </button>
+
+        @if (showUserDropdown()) {
+          <div class="sahayak-topbar__dropdown" (click)="$event.stopPropagation()">
+            <div class="sahayak-topbar__dropdown-header">
+              <span class="sahayak-topbar__dropdown-avatar">
+                {{ getUserInitial() }}
+              </span>
+              <div class="sahayak-topbar__dropdown-info">
+                <span class="sahayak-topbar__dropdown-email" title="{{ user.username || user.email }}">{{ user.username || user.email }}</span>
+                <span class="sahayak-topbar__dropdown-role">{{ user.role }}</span>
+              </div>
+            </div>
+
+            <div class="sahayak-topbar__dropdown-divider"></div>
+
+            <button
+              type="button"
+              class="sahayak-topbar__dropdown-item sahayak-topbar__dropdown-item--danger"
+              (click)="onLogout()"
+            >
+              <app-icon name="log-out" [size]="13" />
+              <span>Log out</span>
+            </button>
+          </div>
+        }
+      </div>
+    }
+  </div>
+</header>
+
+<!-- ============================================================== -->
+<!-- VIEW 1: ENVIRONMENTS DASHBOARD                                -->
+<!-- ============================================================== -->
+@if (viewMode() === 'dashboard') {
+  <main class="sahayak-dashboard">
+    <!-- Conflict banner -->
+    @if (conflictInfo(); as conflict) {
+      <div class="sahayak-alert sahayak-alert--conflict" role="alert">
+        <span>{{ conflict.message }}</span>
+        <button type="button" (click)="reloadLatestVersion()">Reload latest</button>
+        <button type="button" (click)="dismissConflictBanner()">Dismiss</button>
+      </div>
+    }
+    @if (saveError(); as saveErrorMessage) {
+      <div class="sahayak-alert sahayak-alert--error" role="alert">{{ saveErrorMessage }}</div>
+    }
+
+    <!-- Dashboard Header -->
+    <header class="sahayak-dashboard__header">
+      <div class="sahayak-dashboard__title-wrap">
+        <h1 class="sahayak-dashboard__title">Environments</h1>
+        <div class="sahayak-dashboard__tabs">
+          <button
+            type="button"
+            class="sahayak-dashboard__tab"
+            [class.sahayak-dashboard__tab--active]="dashboardTab() === 'all'"
+            (click)="dashboardTab.set('all')"
+          >
+            All ({{ list().length }})
+          </button>
+          <button
+            type="button"
+            class="sahayak-dashboard__tab"
+            [class.sahayak-dashboard__tab--active]="dashboardTab() === 'active'"
+            (click)="dashboardTab.set('active')"
+          >
+            Active ({{ activeCount() }})
+          </button>
+          <button
+            type="button"
+            class="sahayak-dashboard__tab"
+            [class.sahayak-dashboard__tab--active]="dashboardTab() === 'paused'"
+            (click)="dashboardTab.set('paused')"
+          >
+            Paused ({{ pausedCount() }})
+          </button>
+        </div>
+      </div>
+
+      <div class="sahayak-dashboard__actions">
+        <div class="sahayak-dashboard__search">
+          <span class="sahayak-dashboard__search-icon">
+            <app-icon name="search" [size]="13" />
+          </span>
+          <input
+            type="text"
+            placeholder="Filter environments..."
+            [value]="searchQuery()"
+            (input)="searchQuery.set($any($event.target).value)"
+          />
+        </div>
+        <button class="sahayak-dashboard__create-btn" type="button" (click)="createEnvironmentRow()">
+          <app-icon name="plus" [size]="13" />
+          <span>New environment</span>
+        </button>
+      </div>
+    </header>
+
+    <!-- Environments Grid -->
+    <div class="sahayak-dashboard__grid">
+      @for (summary of filteredList(); track summary.uuid) {
+        <div class="sahayak-card" (click)="openInStudio(summary)">
+          <div class="sahayak-card__head">
+            <div class="sahayak-card__title-group">
+              <span class="sahayak-card__icon">
+                <app-icon name="server" [size]="14" />
+              </span>
+              <h2 class="sahayak-card__title">{{ summary.name }}</h2>
+              <span
+                class="sahayak-card__status-dot"
+                [class.sahayak-card__status-dot--active]="summary.listener === 'listening'"
+                [attr.title]="summary.listener === 'listening' ? 'Listener active on port ' + summary.port : 'Listener paused'"
+              ></span>
+            </div>
+
+            <div class="sahayak-card__actions" (click)="$event.stopPropagation()">
+              <button
+                type="button"
+                class="sahayak-card__quick-btn"
+                [class.sahayak-card__quick-btn--active]="summary.listener === 'listening'"
+                [disabled]="isListenerBusy(summary.uuid)"
+                (click)="toggleListener(summary, $event)"
+                [attr.title]="summary.listener === 'listening' ? 'Pause project (port ' + summary.port + ')' : 'Start project (port ' + summary.port + ')'"
+              >
+                <app-icon [name]="summary.listener === 'listening' ? 'pause' : 'play'" [size]="11" />
+              </button>
+              <button
+                type="button"
+                class="sahayak-card__quick-btn sahayak-card__quick-btn--delete"
+                title="Delete project"
+                (click)="promptDeleteProject(summary, $event)"
+              >
+                <app-icon name="trash" [size]="11" />
+              </button>
+              <div class="sahayak-card__menu-wrap">
+                <button
+                  type="button"
+                  class="sahayak-card__menu-btn"
+                  title="More options"
+                  (click)="toggleCardMenu(summary.uuid, $event)"
+                >
+                  <app-icon name="more" [size]="14" />
+                </button>
+                @if (activeCardMenuUuid() === summary.uuid) {
+                  <div class="sahayak-card__dropdown" (click)="$event.stopPropagation()">
+                    <button type="button" class="sahayak-card__dropdown-item" (click)="openSettingsModal(summary, $event); closeCardMenu()">
+                      <app-icon name="settings" [size]="12" />
+                      <span>Settings</span>
+                    </button>
+                    <button type="button" class="sahayak-card__dropdown-item" (click)="duplicateEnvironmentRow(summary, $event); closeCardMenu()">
+                      <app-icon name="copy" [size]="12" />
+                      <span>Duplicate</span>
+                    </button>
+                    <button type="button" class="sahayak-card__dropdown-item" (click)="exportEnvironmentRow(summary, $event); closeCardMenu()">
+                      <app-icon name="arrow-down" [size]="12" />
+                      <span>Export</span>
+                    </button>
+                    <div class="sahayak-card__dropdown-divider"></div>
+                    <button type="button" class="sahayak-card__dropdown-item sahayak-card__dropdown-item--danger" (click)="promptDeleteProject(summary, $event); closeCardMenu()">
+                      <app-icon name="trash" [size]="12" />
+                      <span>Delete Project</span>
+                    </button>
+                  </div>
+                }
+              </div>
+            </div>
+          </div>
+
+          <p class="sahayak-card__desc">
+            Base Path: {{ getEnvironmentPrefix(summary) || '/' }} • Port: {{ summary.port }}
+          </p>
+
+          <div class="sahayak-card__url-bar" (click)="$event.stopPropagation()">
+            <span class="sahayak-card__url-text">
+              {{ getEnvironmentUrl(summary) }}
+            </span>
+            <button
+              type="button"
+              class="sahayak-card__copy-btn"
+              (click)="copyUrl(summary, $event)"
+              title="Copy endpoint URL"
+            >
+              @if (copiedUuid() === summary.uuid) {
+                <app-icon name="check" [size]="12" />
+                <span>Copied</span>
+              } @else {
+                <app-icon name="copy" [size]="12" />
+              }
+            </button>
+          </div>
+
+          <div class="sahayak-card__footer">
+            <div class="sahayak-card__meta-group">
+              <span class="sahayak-card__meta">
+                {{ summary.routeCount }} {{ summary.routeCount === 1 ? 'route' : 'routes' }}
+              </span>
+              <span class="sahayak-card__meta-sep">•</span>
+              <button
+                type="button"
+                class="sahayak-card__status-btn"
+                [class.sahayak-card__status-btn--active]="summary.listener === 'listening'"
+                [disabled]="isListenerBusy(summary.uuid)"
+                (click)="toggleListener(summary, $event)"
+                [attr.title]="summary.listener === 'listening' ? 'Listener is active on port ' + summary.port + '. Click to pause.' : 'Listener is paused. Click to start on port ' + summary.port + '.'"
+              >
+                <span class="sahayak-card__status-dot-sm" [class.sahayak-card__status-dot-sm--active]="summary.listener === 'listening'"></span>
+                <app-icon [name]="summary.listener === 'listening' ? 'pause' : 'play'" [size]="10" />
+                <span>{{ summary.listener === 'listening' ? 'Active' : 'Paused' }}</span>
+              </button>
+            </div>
+
+            <button type="button" class="sahayak-card__open-btn" (click)="openInStudio(summary)">
+              <span>Open</span>
+              <app-icon name="arrow-right" [size]="12" />
+            </button>
+          </div>
+        </div>
+      } @empty {
+        <div class="sahayak-dashboard__empty">
+          <p class="sahayak-dashboard__empty-text">No environments configured.</p>
+          <button type="button" class="sahayak-dashboard__create-btn" (click)="createEnvironmentRow()">
+            <app-icon name="plus" [size]="13" />
+            <span>New environment</span>
+          </button>
+        </div>
+      }
+    </div>
+
+    <!-- Dashboard Footer -->
+    <footer class="sahayak-dashboard__footer">
+      <span class="sahayak-dashboard__footer-brand">Sahayak</span>
+      <div class="sahayak-dashboard__footer-links">
+        <a href="javascript:void(0)" (click)="showSettings.set(true)">Documentation</a>
+        <span class="sahayak-dashboard__footer-dot">•</span>
+        <a href="javascript:void(0)" (click)="showSettings.set(true)">Engine Status</a>
+        <span class="sahayak-dashboard__footer-dot">•</span>
+        <a href="javascript:void(0)">Configuration</a>
+      </div>
+    </footer>
+  </main>
+}
+
+<!-- ============================================================== -->
+<!-- VIEW 2: PROJECT STUDIO & EDITOR                                -->
+<!-- ============================================================== -->
+@if (viewMode() === 'studio') {
+  @if (current(); as currentEnv) {
+    <main class="sahayak-studio">
+      <!-- Studio Subheader Bar -->
+      <section class="sahayak-studio__header">
+        <div class="sahayak-studio__header-left">
+          <div class="sahayak-studio__env-badge">
+            <span class="sahayak-studio__env-name">{{ currentEnv.name }}</span>
+            <button
+              type="button"
+              class="sahayak-studio__status-btn"
+              [class.sahayak-studio__status-btn--active]="isCurrentActive()"
+              [disabled]="isListenerBusy(currentEnv.uuid)"
+              (click)="toggleCurrentListener()"
+              [attr.title]="isCurrentActive() ? 'Listener is active on port ' + currentEnv.port + '. Click to pause.' : 'Listener is paused. Click to start on port ' + currentEnv.port + '.'"
+            >
+              <span class="sahayak-studio__status-dot" [class.sahayak-studio__status-dot--active]="isCurrentActive()"></span>
+              <app-icon [name]="isCurrentActive() ? 'pause' : 'play'" [size]="10" />
+              <span>{{ isCurrentActive() ? 'Active' : 'Paused' }}</span>
+            </button>
+          </div>
+
+          <nav class="sahayak-studio__nav-tabs">
+            <button
+              type="button"
+              class="sahayak-studio__nav-tab"
+              [class.sahayak-studio__nav-tab--active]="activeTab() === 'routes'"
+              (click)="switchTab('routes')"
+            >
+              <app-icon name="layers" [size]="13" />
+              <span>Routes</span>
+              <span class="sahayak-studio__count-bubble">{{ currentEnv.routes.length }}</span>
+            </button>
+            <button
+              type="button"
+              class="sahayak-studio__nav-tab"
+              [class.sahayak-studio__nav-tab--active]="activeTab() === 'headers'"
+              (click)="switchTab('headers')"
+            >
+              <span>Headers</span>
+              @if (currentEnv.headers.length > 0) {
+                <span class="sahayak-studio__count-bubble">{{ currentEnv.headers.length }}</span>
+              }
+            </button>
+            <button
+              type="button"
+              class="sahayak-studio__nav-tab"
+              [class.sahayak-studio__nav-tab--active]="activeTab() === 'logs'"
+              (click)="switchTab('logs')"
+            >
+              <span>Logs</span>
+            </button>
+            <button
+              type="button"
+              class="sahayak-studio__nav-tab"
+              [class.sahayak-studio__nav-tab--active]="activeTab() === 'proxy'"
+              (click)="switchTab('proxy')"
+            >
+              <span>Proxy</span>
+            </button>
+            <button
+              type="button"
+              class="sahayak-studio__nav-tab"
+              [class.sahayak-studio__nav-tab--active]="activeTab() === 'settings'"
+              (click)="switchTab('settings')"
+            >
+              <span>Settings</span>
+            </button>
+          </nav>
+        </div>
+      </section>
+
+      <!-- Main Studio View -->
+      <div class="sahayak-studio__body">
+        <!-- Content area based on active tab -->
+        <section class="sahayak-studio__main-stage">
+          @switch (activeTab()) {
+            @case ('routes') {
+              <div class="sahayak-studio__routes-layout">
+                <!-- Middle Column: Route List -->
+                <div class="sahayak-studio__routes-pane">
+                  <app-route-list
+                    [routesInput]="currentEnv.routes"
+                    [selectedUuidInput]="selectedRouteUuid()"
+                    (routesChange)="onRouteListChanged($event)"
+                    (selectChange)="onRouteSelected($event)"
+                  />
+                </div>
+
+                <!-- Right Column: Route & Response Studio -->
+                <div class="sahayak-studio__editor-pane">
+                  @if (selectedRoute(); as activeRoute) {
+                    <!-- Top Route Definition Bar -->
+                    <div class="sahayak-studio__route-bar">
+                      <div class="sahayak-studio__route-bar-main">
+                        <select
+                          class="sahayak-studio__method-select"
+                          [value]="activeRoute.method"
+                          [syncSelectValue]="activeRoute.method"
+                          (change)="applyRoute({ ...activeRoute, method: $any($event.target).value })"
+                        >
+                          <option value="get" [selected]="activeRoute.method === 'get'">GET</option>
+                          <option value="post" [selected]="activeRoute.method === 'post'">POST</option>
+                          <option value="put" [selected]="activeRoute.method === 'put'">PUT</option>
+                          <option value="patch" [selected]="activeRoute.method === 'patch'">PATCH</option>
+                          <option value="delete" [selected]="activeRoute.method === 'delete'">DELETE</option>
+                          <option value="head" [selected]="activeRoute.method === 'head'">HEAD</option>
+                          <option value="options" [selected]="activeRoute.method === 'options'">OPTIONS</option>
+                        </select>
+
+                        <div class="sahayak-studio__url-input-wrap">
+                          <span class="sahayak-studio__url-prefix">
+                            {{ getEnvironmentUrl(currentEnv) }}
+                          </span>
+                          <input
+                            type="text"
+                            class="sahayak-studio__endpoint-input"
+                            placeholder="/api/v1/resource"
+                            [value]="activeRoute.endpoint"
+                            (change)="applyRoute({ ...activeRoute, endpoint: $any($event.target).value })"
+                          />
+                          <button
+                            type="button"
+                            class="sahayak-studio__copy-url-btn"
+                            (click)="copyRouteUrl(currentEnv, activeRoute)"
+                            title="Copy full endpoint URL"
+                          >
+                            @if (copiedUuid() === currentEnv.uuid) {
+                              <app-icon name="check" [size]="12" />
+                              <span>Copied!</span>
+                            } @else {
+                              <app-icon name="copy" [size]="12" />
+                              <span>Copy</span>
+                            }
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <!-- Response Switcher & Actions -->
+                    <div class="sahayak-studio__response-bar">
+                      <div class="sahayak-studio__response-select-group">
+                        <select
+                          class="sahayak-studio__response-select"
+                          [value]="selectedResponseUuid() || ''"
+                          [syncSelectValue]="selectedResponseUuid() || ''"
+                          (change)="onResponseSelected($any($event.target).value)"
+                        >
+                          @for (resp of activeRoute.responses; track resp.uuid; let i = $index) {
+                            <option [value]="resp.uuid" [selected]="selectedResponseUuid() === resp.uuid">
+                              Response {{ i + 1 }} ({{ resp.statusCode }}) {{ resp.label ? '- ' + resp.label : '' }}
+                            </option>
+                          }
+                        </select>
+                        <button
+                          type="button"
+                          class="sahayak-studio__add-resp-btn"
+                          (click)="addResponse(activeRoute.uuid)"
+                        >
+                          <app-icon name="plus" [size]="12" />
+                          <span>Add response</span>
+                        </button>
+                      </div>
+                    </div>
+
+                    <!-- Response Studio (Body, Headers, Rules) -->
+                    @if (selectedResponse(); as activeResponse) {
+                      <app-response-editor
+                        [responseInput]="activeResponse"
+                        [environmentUuidInput]="currentEnv.uuid"
+                        [routeMethodInput]="activeRoute.method"
+                        (responseChange)="applyResponse($event)"
+                      />
+                    }
+                  } @else {
+                    <div class="sahayak-studio__no-selection">
+                      <p>Select a route from the list or click + to create a new endpoint.</p>
+                    </div>
+                  }
+                </div>
+              </div>
+            }
+
+            @case ('headers') {
+              <div class="sahayak-studio__panel-wrap">
+                <h3 class="sahayak-studio__panel-title">Default Response Headers</h3>
+                <p class="sahayak-studio__panel-desc">
+                  Headers applied to every response served by this mock server unless overridden by the route.
+                </p>
+                <app-kv-list
+                  [itemsInput]="currentEnv.headers"
+                  keyPlaceholderInput="Header name (e.g. X-Request-ID)"
+                  valuePlaceholderInput="Value"
+                  (itemsChange)="applySettings({ ...currentEnv, headers: $event })"
+                />
+              </div>
+            }
+
+            @case ('logs') {
+              <div class="sahayak-studio__logs-wrap">
+                <app-log-viewer
+                  [environmentsInput]="list()"
+                  [environmentUuidInput]="currentEnv.uuid"
+                  [canClearInput]="canClearLogs()"
+                />
+              </div>
+            }
+
+            @case ('proxy') {
+              <div class="sahayak-studio__panel-wrap">
+                <h3 class="sahayak-studio__panel-title">Proxy Fallback Mode</h3>
+                <p class="sahayak-studio__panel-desc">
+                  When enabled, requests that do not match any mock route are forwarded to this target host.
+                </p>
+                <div class="sahayak-studio__form-row">
+                  <label class="sahayak-studio__checkbox">
+                    <input
+                      type="checkbox"
+                      [checked]="currentEnv.proxyMode"
+                      (change)="applySettings({ ...currentEnv, proxyMode: $any($event.target).checked })"
+                    />
+                    <span>Enable proxy fallback</span>
+                  </label>
+                </div>
+                <div class="sahayak-studio__form-row">
+                  <label class="sahayak-studio__label">Proxy Host URL</label>
+                  <input
+                    type="text"
+                    class="sahayak-studio__input"
+                    placeholder="https://api.upstream-service.com"
+                    [value]="currentEnv.proxyHost"
+                    (change)="applySettings({ ...currentEnv, proxyHost: $any($event.target).value })"
+                  />
+                </div>
+              </div>
+            }
+
+            @case ('settings') {
+              <div class="sahayak-studio__panel-wrap">
+                <h3 class="sahayak-studio__panel-title">Environment Settings</h3>
+                <div class="sahayak-studio__form-row">
+                  <label class="sahayak-studio__label">Environment Name</label>
+                  <input
+                    type="text"
+                    class="sahayak-studio__input"
+                    [value]="currentEnv.name"
+                    (change)="applySettings({ ...currentEnv, name: $any($event.target).value })"
+                  />
+                </div>
+                <div class="sahayak-studio__form-row">
+                  <label class="sahayak-studio__label">Listening Port</label>
+                  <input
+                    type="number"
+                    class="sahayak-studio__input"
+                    [value]="currentEnv.port"
+                    (change)="applySettings({ ...currentEnv, port: +$any($event.target).value })"
+                  />
+                </div>
+                <div class="sahayak-studio__form-row">
+                  <label class="sahayak-studio__label">Listener State</label>
+                  <div class="sahayak-studio__listener-row">
+                    <span
+                      class="sahayak-studio__listener-pill"
+                      [class.sahayak-studio__listener-pill--active]="isCurrentActive()"
+                    >
+                      <span class="sahayak-studio__status-dot" [class.sahayak-studio__status-dot--active]="isCurrentActive()"></span>
+                      <span>{{ isCurrentActive() ? 'Active (Port ' + currentEnv.port + ')' : 'Paused' }}</span>
+                    </span>
+                    <button
+                      type="button"
+                      class="sahayak-studio__listener-toggle-btn"
+                      [class.sahayak-studio__listener-toggle-btn--active]="isCurrentActive()"
+                      [disabled]="isListenerBusy(currentEnv.uuid)"
+                      (click)="toggleCurrentListener()"
+                    >
+                      <app-icon [name]="isCurrentActive() ? 'pause' : 'play'" [size]="11" />
+                      <span>{{ isCurrentActive() ? 'Pause Listener' : 'Start Listener' }}</span>
+                    </button>
+                  </div>
+                </div>
+                <div class="sahayak-studio__form-row">
+                  <label class="sahayak-studio__label">Endpoint Prefix (e.g. /api/v1)</label>
+                  <input
+                    type="text"
+                    class="sahayak-studio__input"
+                    [value]="currentEnv.endpointPrefix"
+                    (change)="applySettings({ ...currentEnv, endpointPrefix: $any($event.target).value })"
+                  />
+                </div>
+
+                <div class="sahayak-studio__danger-zone">
+                  <div class="sahayak-studio__danger-info">
+                    <h4 class="sahayak-studio__danger-title">Delete Project</h4>
+                    <p class="sahayak-studio__danger-desc">
+                      Permanently delete <strong>{{ currentEnv.name }}</strong>, its listening port configuration (port {{ currentEnv.port }}), and all {{ currentEnv.routes.length }} configured routes. This action cannot be undone.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    class="sahayak-studio__danger-btn"
+                    (click)="promptDeleteCurrentProject()"
+                  >
+                    <app-icon name="trash" [size]="12" />
+                    <span>Delete Project</span>
+                  </button>
+                </div>
+              </div>
+            }
+          }
+        </section>
+      </div>
+    </main>
+  }
+}
+
+<!-- Settings Modal -->
+@if (showSettings()) {
+  @if (current(); as activeEnv) {
+    <app-env-settings
+      [environmentInput]="activeEnv"
+      (environmentChange)="applySettings($event)"
+      (closed)="showSettings.set(false)"
+    />
+  }
+}
+
+<!-- Create Environment Modal -->
+@if (showCreateModal()) {
+  <app-modal title="Create New Environment" (closed)="closeCreateEnvironmentModal()">
+    <form class="sahayak-create-form" (submit)="confirmCreateEnvironment(); $event.preventDefault()">
+      <div class="sahayak-create-form__group">
+        <label class="sahayak-create-form__label">
+          Environment / Project Name <span class="sahayak-create-form__req">*</span>
+        </label>
+        <input
+          type="text"
+          class="sahayak-create-form__input"
+          placeholder="e.g. BankXP, Card Server, F1Soft"
+          [value]="newEnvName()"
+          (input)="onNewEnvNameChange($event)"
+          autofocus
+          required
+        />
+      </div>
+
+      <div class="sahayak-create-form__group">
+        <label class="sahayak-create-form__label">
+          Endpoint Prefix / Path
+        </label>
+        <input
+          type="text"
+          class="sahayak-create-form__input"
+          [placeholder]="newEnvName().trim() ? '/' + newEnvName().trim().toLowerCase() : '/hemant'"
+          [value]="newEnvPrefix()"
+          (input)="onNewEnvPrefixChange($event)"
+        />
+        <p class="sahayak-create-form__hint">
+          Leave blank to automatically use project name: <code>{{ getBaseUrl() }}{{ getEnvironmentPrefix({ name: newEnvName().trim() || 'hemant', endpointPrefix: newEnvPrefix() }) }}/endpoint</code>
+        </p>
+      </div>
+
+      <div class="sahayak-create-form__group">
+        <label class="sahayak-create-form__label">
+          Port (Standalone Listener)
+        </label>
+        <input
+          type="number"
+          class="sahayak-create-form__input"
+          min="1024"
+          max="65535"
+          [value]="newEnvPort()"
+          (input)="onNewEnvPortChange($event)"
+        />
+        <p class="sahayak-create-form__hint">
+          Dedicated port used if connecting directly to this mock listener.
+        </p>
+      </div>
+
+      <div class="sahayak-create-form__actions">
+        <button type="button" class="sahayak-create-form__btn sahayak-create-form__btn--cancel" (click)="closeCreateEnvironmentModal()">
+          Cancel
+        </button>
+        <button type="submit" class="sahayak-create-form__btn sahayak-create-form__btn--submit" [disabled]="!newEnvName().trim()">
+          Create Environment
+        </button>
+      </div>
+    </form>
+  </app-modal>
+}
+
+<!-- Delete Project Confirmation Modal -->
+@if (projectToDelete(); as project) {
+  <app-modal title="Delete Project" (closed)="cancelDeleteProject()">
+    <div class="sahayak-delete-modal">
+      <div class="sahayak-delete-modal__header">
+        <div class="sahayak-delete-modal__badge">
+          <app-icon name="trash" [size]="20" />
+        </div>
+        <div>
+          <h3 class="sahayak-delete-modal__title">Delete "{{ project.name }}"?</h3>
+          <p class="sahayak-delete-modal__subtitle">
+            Are you sure you want to permanently delete this project?
+          </p>
+        </div>
+      </div>
+
+      <div class="sahayak-delete-modal__details">
+        <div class="sahayak-delete-modal__detail-row">
+          <span class="sahayak-delete-modal__detail-label">Project:</span>
+          <span class="sahayak-delete-modal__detail-val"><strong>{{ project.name }}</strong></span>
+        </div>
+        <div class="sahayak-delete-modal__detail-row">
+          <span class="sahayak-delete-modal__detail-label">Port:</span>
+          <span class="sahayak-delete-modal__detail-val">{{ project.port }} (listener will be stopped)</span>
+        </div>
+        <div class="sahayak-delete-modal__detail-row">
+          <span class="sahayak-delete-modal__detail-label">Routes:</span>
+          <span class="sahayak-delete-modal__detail-val">{{ project.routeCount }} routes will be deleted</span>
+        </div>
+      </div>
+
+      <p class="sahayak-delete-modal__warning">
+        This action cannot be reversed. All routes, headers, and mock responses will be permanently removed.
+      </p>
+
+      <div class="sahayak-delete-modal__actions">
+        <button
+          type="button"
+          class="sahayak-delete-modal__btn sahayak-delete-modal__btn--cancel"
+          [disabled]="isDeletingProject()"
+          (click)="cancelDeleteProject()"
+        >
+          Cancel
+        </button>
+        <button
+          type="button"
+          class="sahayak-delete-modal__btn sahayak-delete-modal__btn--danger"
+          [disabled]="isDeletingProject()"
+          (click)="confirmDeleteProject()"
+        >
+          {{ isDeletingProject() ? 'Deleting…' : 'Delete Project' }}
+        </button>
+      </div>
+    </div>
+  </app-modal>
+}
+

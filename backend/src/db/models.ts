@@ -1,158 +1,67 @@
 /**
- * Mongoose schemas for mock configuration.
+ * Mongoose models (DESIGN.md §4.1, B2).
  *
- * Collections:
- *   environments  - one document per environment (meta + headers)
- *   routes        - one document per route, unique (envId, routeId)
- *   responses     - one document per response, unique (envId, routeId, responseId)
- *
- * Documents are written with `replaceOne(..., { upsert: true })` against those
- * unique keys, so a save touches exactly the entities that changed - editing
- * one response body writes exactly one document.
+ * `routes` / `data` / `headers` are stored as Mixed so the environment
+ * document stays byte-identical to Mockoon's file format — no schema drift,
+ * lossless import/export (DESIGN.md §2.13).
  */
-import { Connection, Model, Schema } from 'mongoose';
+import { Connection, Model, Schema, Types } from 'mongoose';
+import { Environment, User } from '../lib/types';
 
-export interface KeyValueDoc {
-  id: string;
-  key: string;
-  value: string;
-}
+export function registerModels(conn: Connection) {
+  const EnvironmentModel: Model<Environment> =
+    (conn.models.Environment as Model<Environment>) ??
+    conn.model<Environment>('Environment', new Schema({
+      uuid: { type: String, required: true, unique: true, index: true },
+      name: { type: String, default: '' },
+      port: { type: Number, default: 3000 },
+      endpointPrefix: { type: String, default: '' },
+      headers: { type: [new Schema({ key: String, value: String }, { _id: false })], default: [] },
+      proxyMode: { type: Boolean, default: false },
+      proxyHost: { type: String, default: '' },
+      proxyRemovePrefix: { type: Boolean, default: false },
+      tlsOptions: {
+        enabled: { type: Boolean, default: false },
+        certPath: { type: String, default: '' },
+        keyPath: { type: String, default: '' },
+        passphrase: { type: String, default: '' },
+      },
+      // Mockoon-shaped — kept as Mixed for lossless round-trips.
+      // (Casted: mongoose's SchemaDefinitionProperty typing rejects Mixed[]
+      // for typed generics, but this is exactly the opaque-array case.)
+      routes: { type: [Schema.Types.Mixed], default: [] } as unknown as { type: never },
+      data: { type: [Schema.Types.Mixed], default: [] } as unknown as { type: never },
+      version: { type: Number, default: 1 },
+      createdAt: { type: String, default: () => new Date().toISOString() },
+      updatedAt: { type: String, default: () => new Date().toISOString() },
+    }, { _id: false }));
 
-export interface RuleDoc {
-  id: string;
-  target: string;
-  property: string;
-  operator: string;
-  value: string;
-}
+  const UserModel: Model<User> =
+    (conn.models.User as Model<User>) ??
+    conn.model<User>('User', new Schema({
+      email: { type: String, required: true, unique: true, index: true },
+      passwordHash: { type: String, required: true },
+      role: { type: String, enum: ['admin', 'editor', 'viewer'], default: 'editor' },
+      createdAt: { type: String, default: () => new Date().toISOString() },
+    }, { _id: false }));
 
-export interface EnvironmentDoc {
-  _id?: unknown;
-  envId: string;
-  name: string;
-  endpointPrefix: string;
-  port: number;
-  latency: number;
-  headers: KeyValueDoc[];
-  position: number;
-  routeCount: number;
-  schemaVersion: number;
-  updatedAt: string;
-}
-
-export interface RouteDoc {
-  _id?: unknown;
-  envId: string;
-  routeId: string;
-  method: string;
-  endpoint: string;
-  description: string;
-  latency: number;
-  selectedResponseId: string;
-  responseCount: number;
-  position: number;
-  schemaVersion: number;
-  updatedAt: string;
-}
-
-export interface ResponseDoc {
-  _id?: unknown;
-  envId: string;
-  routeId: string;
-  responseId: string;
-  statusCode: number;
-  label: string;
-  headers: KeyValueDoc[];
-  body: string;
-  rules: RuleDoc[];
-  rulesOperator: 'AND' | 'OR';
-  validationInterface?: string;
-  validationEnabled?: boolean;
-  position: number;
-  schemaVersion: number;
-  updatedAt: string;
-}
-
-const keyValueSchema = new Schema<KeyValueDoc>(
-  { id: String, key: String, value: String },
-  { _id: false, id: false }
-);
-
-const ruleSchema = new Schema<RuleDoc>(
-  { id: String, target: String, property: String, operator: String, value: String },
-  { _id: false, id: false }
-);
-
-const environmentSchema = new Schema<EnvironmentDoc>(
-  {
-    envId: { type: String, required: true },
-    name: { type: String, default: '' },
-    endpointPrefix: { type: String, default: '' },
-    port: { type: Number, default: 3000 },
-    latency: { type: Number, default: 0 },
-    headers: { type: [keyValueSchema], default: [] },
-    position: { type: Number, default: 0 },
-    routeCount: { type: Number, default: 0 },
-    schemaVersion: { type: Number, default: 1 },
-    updatedAt: { type: String, default: '' },
-  },
-  { timestamps: { createdAt: true, updatedAt: false } }
-);
-environmentSchema.index({ envId: 1 }, { unique: true });
-
-const routeSchema = new Schema<RouteDoc>(
-  {
-    envId: { type: String, required: true },
-    routeId: { type: String, required: true },
-    method: { type: String, default: 'get' },
-    endpoint: { type: String, default: '' },
-    description: { type: String, default: '' },
-    latency: { type: Number, default: 0 },
-    selectedResponseId: { type: String, default: '' },
-    responseCount: { type: Number, default: 0 },
-    position: { type: Number, default: 0 },
-    schemaVersion: { type: Number, default: 1 },
-    updatedAt: { type: String, default: '' },
-  },
-  { timestamps: { createdAt: true, updatedAt: false } }
-);
-routeSchema.index({ envId: 1, routeId: 1 }, { unique: true });
-
-const responseSchema = new Schema<ResponseDoc>(
-  {
-    envId: { type: String, required: true },
-    routeId: { type: String, required: true },
-    responseId: { type: String, required: true },
-    statusCode: { type: Number, default: 200 },
-    label: { type: String, default: '' },
-    headers: { type: [keyValueSchema], default: [] },
-    body: { type: String, default: '' },
-    rules: { type: [ruleSchema], default: [] },
-    rulesOperator: { type: String, enum: ['AND', 'OR'], default: 'AND' },
-    validationInterface: { type: String, default: undefined },
-    validationEnabled: { type: Boolean, default: undefined },
-    position: { type: Number, default: 0 },
-    schemaVersion: { type: Number, default: 1 },
-    updatedAt: { type: String, default: '' },
-  },
-  { timestamps: { createdAt: true, updatedAt: false } }
-);
-responseSchema.index({ envId: 1, routeId: 1, responseId: 1 }, { unique: true });
-
-export interface MongoModels {
-  Environment: Model<EnvironmentDoc>;
-  Route: Model<RouteDoc>;
-  Response: Model<ResponseDoc>;
+  // Logs use the raw capped collection (see MongoStorage.ensureCappedLogs).
+  return { EnvironmentModel, UserModel };
 }
 
 /**
- * Register (or reuse) the models on a connection. Safe to call twice on the
- * same connection - required because each connection keeps its own models.
+ * Ensure the capped logs collection exists (§2.6: capped, e.g. 512 MB).
+ * Safe to call on every boot (collection-exists error is swallowed).
  */
-export function registerModels(conn: Connection): MongoModels {
-  return {
-    Environment: (conn.models['Environment'] as Model<EnvironmentDoc> | undefined) ?? conn.model('Environment', environmentSchema),
-    Route: (conn.models['Route'] as Model<RouteDoc> | undefined) ?? conn.model('Route', routeSchema),
-    Response: (conn.models['Response'] as Model<ResponseDoc> | undefined) ?? conn.model('Response', responseSchema),
-  };
+export async function ensureCappedLogs(conn: Connection, sizeBytes = 512 * 1024 * 1024): Promise<void> {
+  try {
+    const db = conn.db;
+    if (!db) throw new Error('Mongo connection has no database selected');
+    await db.createCollection('logs', { capped: true, size: sizeBytes });
+  } catch (err: unknown) {
+    const code = (err as { code?: number })?.code;
+    if (code !== 72 && code !== 48) throw err; // 72=CollectionAlreadyExists, 48=NamespaceExists
+  }
 }
+
+export type { Types };

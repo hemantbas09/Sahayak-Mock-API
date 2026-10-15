@@ -1,93 +1,180 @@
+/**
+ * Mockoon-compatible domain types (DESIGN.md §5, §6).
+ *
+ * These mirror the backend's `Environment` document 1:1 so a save is a
+ * whole-document PUT with optimistic concurrency (`version`). The frontend
+ * never invents its own shapes: what the store holds is what the server
+ * persists.
+ */
+
 export interface KeyValue {
-  id: string;
   key: string;
   value: string;
 }
 
-export type HttpMethod = 'get' | 'post' | 'put' | 'delete' | 'patch' | 'head' | 'options';
+export type HttpMethod = 'get' | 'post' | 'put' | 'patch' | 'delete' | 'head' | 'options';
 
-export type RuleTarget = 'header' | 'query' | 'body' | 'route_param';
+export type RouteType = 'http' | 'crud';
 
-export type RuleOperator = 
-  | 'equals' 
-  | 'not_equals' 
-  | 'contains' 
-  | 'not_contains' 
-  | 'regex' 
-  | 'null' 
-  | 'not_null'
-  | 'is_string'
-  | 'not_is_string'
-  | 'is_number'
-  | 'not_is_number'
-  | 'is_boolean'
-  | 'not_is_boolean'
-  | 'is_array'
-  | 'not_is_array'
-  | 'is_object'
-  | 'not_is_object'
-  | 'has_property'
-  | 'missing_property'
-  | 'body_required'
-  | 'body_empty'
-  | 'is_optional_string'
-  | 'is_optional_number'
-  | 'is_optional_boolean';
+/** null = rules mode (Mockoon's default); otherwise a fixed selection mode. */
+export type ResponseMode = null | 'RANDOM' | 'SEQUENTIAL';
 
+export type BodyType = 'INLINE' | 'FILE' | 'DATABUCKET' | 'NONE';
+
+export type RulesOperator = 'AND' | 'OR';
+
+export type RuleTarget =
+  | 'body'
+  | 'query'
+  | 'params'
+  | 'headers'
+  | 'cookie'
+  | 'global_var'
+  | 'request_number'
+  | 'data_bucket';
+
+/** One conditional response rule (round-trips `RouteRule[]` from the API). */
 export interface RouteRule {
-  id: string;
+  uuid: string;
   target: RuleTarget;
+  /** Property name/path; for `data_bucket` this is the bucket uuid. */
   property: string;
-  operator: RuleOperator;
+  /** Secondary path — used by data_bucket rules to dig into the bucket. */
+  modifier: string;
+  /** Operator id (see the full list in rule-editor). */
+  operator: string;
+  invert: boolean;
+  /** Expected value; templating allowed (rendered by the engine before compare). */
   value: string;
 }
 
+export interface PayloadValidation {
+  enabled: boolean;
+  schema: string;
+  errorStatus: number;
+  errorBody: string;
+}
+
 export interface RouteResponse {
-  id: string;
-  statusCode: number;
+  uuid: string;
   label: string;
+  statusCode: number;
+  /** Header values are templated at render time. */
   headers: KeyValue[];
+  /** Per-response latency in ms. */
+  latency: number;
+  bodyType: BodyType;
+  /** INLINE template text. */
   body: string;
+  /** FILE path (templated). */
+  filePath: string;
+  /** DATABUCKET id. */
+  databucketId: string;
   rules: RouteRule[];
-  rulesOperator: 'AND' | 'OR';
-  validationInterface?: string;
-  validationEnabled?: boolean;
+  rulesOperator: RulesOperator;
+  /** Exactly one default response per route (Mockoon convention). */
+  defaultResponse: boolean;
+  payloadValidation?: PayloadValidation;
 }
 
-export interface MockRoute {
-  id: string;
+export interface Route {
+  uuid: string;
+  type: RouteType;
+  /** HTTP method; ignored for CRUD routes. */
   method: HttpMethod;
+  /** Path pattern, e.g. "/users/:id" or "/users". */
   endpoint: string;
-  description: string;
-  latency: number; // in ms
+  documentation: string;
+  responseMode: ResponseMode;
+  /** Declaration order matters: matching + rules walk follow this order. */
   responses: RouteResponse[];
-  selectedResponseId: string;
+  /** Route-level proxy (pure proxy or fallback for this route). */
+  proxyHost: string;
+  proxyRemovePrefix: boolean;
 }
 
-export interface MockEnvironment {
-  id: string;
+export interface DataBucket {
+  uuid: string;
   name: string;
-  endpointPrefix: string;
+  /** Templated once at generation time (server start / first reference). */
+  content: string;
+}
+
+export interface TlsOptions {
+  enabled: boolean;
+  certPath: string;
+  keyPath: string;
+  passphrase: string;
+}
+
+export interface Environment {
+  uuid: string;
+  name: string;
+  /** Real listening port for this environment's mock listener. */
   port: number;
-  latency: number; // global fallback delay
+  /** Stripped before route matching (e.g. "/api/v1"). */
+  endpointPrefix: string;
+  /** Default response headers, merged under per-response headers. */
   headers: KeyValue[];
-  routes: MockRoute[];
+  proxyMode: boolean;
+  proxyHost: string;
+  proxyRemovePrefix: boolean;
+  tlsOptions: TlsOptions;
+  routes: Route[];
+  /** Data buckets: CRUD sources + `{{data name "path"}}` payloads. */
+  data: DataBucket[];
+  /** Optimistic-concurrency version; the PUT body must echo it. */
+  version: number;
+  createdAt?: string;
+  updatedAt?: string;
+}
+
+export type UserRole = 'admin' | 'editor' | 'viewer';
+
+export interface AuthUser {
+  username?: string;
+  email?: string;
+  role: UserRole;
+}
+
+/** Summary shape returned by GET /api/environments. */
+export interface EnvironmentSummary {
+  uuid: string;
+  name: string;
+  port: number;
+  endpointPrefix: string;
+  routeCount: number;
+  version: number;
+  listener: 'listening' | 'stopped' | 'error' | string;
 }
 
 export interface RequestLog {
-  id: string;
-  timestamp: string;
-  envId: string;
+  ts: number;
+  envUuid: string;
   method: string;
   url: string;
   ip: string;
-  headers: Record<string, string>;
-  queryParams: Record<string, string>;
-  body: any;
-  responseStatus: number;
-  responseHeaders: Record<string, string>;
-  responseBody: string;
-  matchedRoute: string;
-  latency: number;
-  warning?: string;
+  reqHeaders: Record<string, string>;
+  query: Record<string, string>;
+  /** Raw body, truncated to 64 KB server-side. */
+  reqBody: string;
+  resStatus: number;
+  resHeaders: Record<string, string>;
+  /** Truncated to 256 KB server-side. */
+  resBody: string;
+  routeUuid: string;
+  latencyMs: number;
+}
+
+export interface ServerStatus {
+  ok: boolean;
+  storage: string;
+  environments: number;
+  listeners: { uuid: string; state: string }[];
+}
+
+/** Optimistic-concurrency conflict (PUT response, HTTP 409). */
+export interface ConflictInfo {
+  message: string;
+  serverVersion: number;
 }

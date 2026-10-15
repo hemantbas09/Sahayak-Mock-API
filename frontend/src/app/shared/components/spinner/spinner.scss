@@ -4,21 +4,21 @@
   display: inline-flex;
   flex-direction: column;
   align-items: center;
-  gap: $space-2;
-  padding: $space-4;
-  color: $color-text-muted;
+  gap: var(--s2);
+  padding: var(--s3);
+  color: var(--text-muted);
 
   &__ring {
-    width: 28px;
-    height: 28px;
-    border: 3px solid $color-border;
-    border-top-color: $color-primary;
-    border-radius: $radius-pill;
+    width: 20px;
+    height: 20px;
+    border: 2px solid var(--border);
+    border-top-color: var(--accent);
+    border-radius: 50%;
     animation: spinner-rotate 0.8s linear infinite;
   }
 
   &__label {
-    font-size: $font-size-sm;
+    font-size: var(--text-xs);
   }
 }
 
