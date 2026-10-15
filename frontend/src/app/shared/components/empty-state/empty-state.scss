@@ -1,0 +1,24 @@
+@use 'tokens' as *;
+
+.empty-state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: var(--s1);
+  padding: var(--s6) var(--s4);
+  text-align: center;
+  color: var(--text-muted);
+
+  &__title {
+    margin: 0;
+    font-size: var(--text-md);
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  &__hint {
+    margin: 0;
+    font-size: var(--text-xs);
+  }
+}

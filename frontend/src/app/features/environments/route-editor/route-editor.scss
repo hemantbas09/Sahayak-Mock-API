@@ -1,0 +1,95 @@
+@use 'tokens' as *;
+
+.route-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--s3);
+
+  &__head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  &__heading {
+    margin: 0;
+    font-size: var(--text-md);
+    font-weight: 600;
+    color: var(--text);
+  }
+
+  &__type-badge {
+    padding: 1px var(--s2);
+    background: var(--surface);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+    font-weight: 600;
+  }
+
+  &__grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--s3);
+  }
+
+  &__field {
+    display: flex;
+    flex-direction: column;
+    gap: var(--s1);
+    min-width: 0;
+
+    &--half {
+      grid-column: span 1;
+    }
+
+    &--quarter {
+      grid-column: span 1;
+    }
+  }
+
+  &__label {
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+  }
+
+  &__endpoint-input,
+  &__method,
+  &__bucket,
+  &__docs {
+    width: 100%;
+    padding: var(--s2);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--r);
+    color: var(--text);
+    font-size: var(--text-xs);
+    font-family: var(--font-mono);
+    box-sizing: border-box;
+
+    &:focus {
+      outline: none;
+      border-color: var(--accent);
+    }
+  }
+
+  &__docs {
+    font-family: var(--font-ui);
+    resize: vertical;
+  }
+
+  &__method,
+  &__bucket {
+    font-family: var(--font-ui);
+    height: 28px;
+    padding: 0 var(--s2);
+  }
+
+  &__hint {
+    margin: 0;
+    color: var(--text-muted);
+    font-size: var(--text-xs);
+  }
+}

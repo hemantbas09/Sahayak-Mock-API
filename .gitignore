@@ -1,8 +1,45 @@
-node_modules/
-build/
-dist/
-coverage/
+# Root-level ignores. Per-package ignores live in frontend/ and backend/.gitignore
+# (the Angular and Node scaffolds maintain their own).
+
+# Build output
+/dist
+/tmp
+/out-tsc
+/bazel-out
+
+# Node
+/node_modules
+/node_modules-locked
+/npm-cache
+/.npm-cache
+npm-debug.log
+yarn-error.log
+
+# Environment
+.env
+
+# IDEs and editors
+.idea/
+.project
+.classpath
+.c9/
+*.launch
+.settings/
+*.sublime-workspace
+.vscode/*
+!.vscode/settings.json
+!.vscode/tasks.json
+!.vscode/launch.json
+!.vscode/extensions.json
+!.vscode/mcp.json
+.history/*
+
+# Miscellaneous
+/.angular/cache
+.sass-cache/
+/coverage
+testem.log
+/typings
+__screenshots__/
 .DS_Store
-*.log
-.env*
-!.env.example
+Thumbs.db

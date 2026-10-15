@@ -1,0 +1,8 @@
+node_modules/
+dist/
+dist-test/
+data/
+.env
+.npm-cache/
+*.log
+node_modules/.tmp-*

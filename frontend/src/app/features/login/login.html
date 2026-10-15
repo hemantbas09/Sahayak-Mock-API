@@ -1,0 +1,49 @@
+<main class="login-screen">
+  <form class="login-screen__card" (ngSubmit)="submitLogin()">
+    <div class="login-screen__header">
+      <div class="login-screen__badge">S</div>
+      <div>
+        <h1 class="login-screen__title">Sahayak</h1>
+        <p class="login-screen__subtitle">API Mock Server Platform</p>
+      </div>
+    </div>
+
+    @if (loginError(); as errorMessage) {
+      <div class="login-screen__error" role="alert">
+        <span>⚠ {{ errorMessage }}</span>
+      </div>
+    }
+
+    <label class="login-screen__field">
+      <span class="login-screen__label">Username</span>
+      <input
+        class="login-screen__input"
+        type="text"
+        name="username"
+        required
+        autocomplete="username"
+        placeholder="Enter username"
+        [ngModel]="usernameInput()"
+        (ngModelChange)="usernameInput.set($event)"
+      />
+    </label>
+
+    <label class="login-screen__field">
+      <span class="login-screen__label">Password</span>
+      <input
+        class="login-screen__input"
+        type="password"
+        name="password"
+        required
+        autocomplete="current-password"
+        placeholder="••••••••"
+        [ngModel]="passwordInput()"
+        (ngModelChange)="passwordInput.set($event)"
+      />
+    </label>
+
+    <button class="login-screen__submit" type="submit" [disabled]="submitting()">
+      @if (submitting()) { Signing in… } @else { Sign in }
+    </button>
+  </form>
+</main>

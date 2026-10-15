@@ -1,0 +1,81 @@
+// Design tokens — developer tool design system.
+// Tokens are defined on :root and mirrored to SCSS variables.
+
+:root {
+  --bg: #18181b;
+  --surface: #1f1f23;
+  --surface-hover: #27272b;
+  --border: #2e2e33;
+  --text: #e4e4e7;
+  --text-muted: #8b8b94;
+  --accent: #3b82f6;
+  --success: #22c55e;
+  --error: #ef4444;
+  --warning: #f59e0b;
+
+  --r: 4px;
+  --r-lg: 6px;
+
+  --s1: 4px;
+  --s2: 8px;
+  --s3: 12px;
+  --s4: 16px;
+  --s6: 24px;
+
+  --font-ui: "IBM Plex Sans", system-ui, sans-serif;
+  --font-mono: "JetBrains Mono", ui-monospace, monospace;
+  --text-xs: 12px;
+  --text-sm: 13px;
+  --text-md: 14px;
+  --text-lg: 16px;
+}
+
+// SCSS bindings referencing design tokens
+$color-bg: var(--bg);
+$color-surface: var(--surface);
+$color-surface-hover: var(--surface-hover);
+$color-surface-2: var(--surface-hover);
+$color-border: var(--border);
+$color-text: var(--text);
+$color-text-muted: var(--text-muted);
+
+$color-primary: var(--accent);
+$color-primary-hover: var(--accent);
+$color-primary-contrast: #ffffff;
+
+$color-danger: var(--error);
+$color-success: var(--success);
+$color-warning: var(--warning);
+
+// Method badge colors (flat, token-aligned)
+$color-method-get: var(--success);
+$color-method-post: var(--accent);
+$color-method-put: var(--warning);
+$color-method-patch: var(--accent);
+$color-method-delete: var(--error);
+
+// Radius: strictly var(--r) and var(--r-lg)
+$radius-sm: var(--r);
+$radius-md: var(--r-lg);
+$radius-pill: var(--r-lg);
+
+// Spacing scale
+$space-1: var(--s1);
+$space-2: var(--s2);
+$space-3: var(--s3);
+$space-4: var(--s4);
+$space-6: var(--s6);
+$space-8: var(--s6);
+
+// Typography scale
+$font-sans: var(--font-ui);
+$font-mono: var(--font-mono);
+$font-size-xs: var(--text-xs);
+$font-size-sm: var(--text-sm);
+$font-size-md: var(--text-md);
+$font-size-lg: var(--text-lg);
+
+// Elevation: strictly dropdowns, popovers, and modals
+$shadow-sm: 0 1px 2px rgba(0, 0, 0, 0.4);
+$shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5);
+$shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.6);

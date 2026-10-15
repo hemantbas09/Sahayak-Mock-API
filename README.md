@@ -1,147 +1,76 @@
-# API Mock Server
+# Sahayak — Team Mock API Platform
 
-API Mock Server is a full-stack mock API workspace for designing isolated environments, creating flexible REST routes, testing payload validation, and watching live request logs in a dark, high-contrast UI.
+A self-hosted mock API platform: configure mock endpoints in a team editor,
+then call them from any client app. See **[DESIGN.md](./DESIGN.md)** for the
+full design, data model, API, and build plan.
 
-It is built with Express, React, Vite, Tailwind CSS, and Firestore-backed persistence.
+## Repository layout
 
-## Screenshots
+```
+├── frontend/     # Angular 22 editor UI (BEM + SCSS, design tokens)
+├── backend/      # Node.js + Express + MongoDB API & mock engine
+├── DESIGN.md     # The single design document (source of truth)
+└── .npm-cache/   # Workspace-local npm cache (gitignored)
+```
 
-![API Mock Server screenshots](docs/images/readme-screenshots.png)
+Each app is standalone with its own `package.json` — install and run them
+independently.
 
-The collage above combines the main Mocks Designer view and the Server Logs view.
+## Development setup
 
-## What It Does
-
-- Create multiple mock environments with their own URL prefixes.
-- Define mock routes with dynamic params like `/users/:id` or wildcard matching.
-- Configure multiple responses per route, each with status, headers, body, and matching rules.
-- Simulate latency to test client timeout and loading-state behavior.
-- Validate request bodies against pasted TypeScript interfaces or JSON schema-like objects.
-- Inspect live request logs with headers, query parameters, response details, and latency.
-- Persist configurations in Firestore so your mock setup survives restarts.
-
-## Key Features
-
-- Multi-environment mock design with isolated route trees.
-- Route duplication, reordering, import/export-friendly workflows, and global headers.
-- Response editor with JSON body formatting and header editing.
-- Rule-based response matching for headers, query params, body values, and route params.
-- Automatic CORS handling for `OPTIONS` requests.
-- Built-in request logger with filter/search controls.
-- Save/discard workflow so edits stay local until you explicitly save.
-
-## Tech Stack
-
-- Frontend: React 19, Vite, Tailwind CSS, Lucide Icons, Motion
-- Backend: Node.js, Express, Firebase Admin SDK, tsx, esbuild
-- Storage: Firestore
-
-## Project Structure
-
-- [`server.ts`](server.ts): Express server, Firestore persistence, and mock route handler.
-- [`src/App.tsx`](src/App.tsx): Main app shell, tabs, save flow, and state management.
-- [`src/components/`](src/components): Sidebar, route editor, response editor, settings, and logs UI.
-- [`src/lib/`](src/lib): Template parsing and slug utilities.
-- [`src/types.ts`](src/types.ts): Shared TypeScript models.
-
-## Local Setup
-
-### Prerequisites
-
-- Node.js 18 or newer
-- npm
-
-### Install
+### 1. Backend
 
 ```bash
+cd backend
 npm install
+cp .env.example .env      # adjust MONGODB_URI if you don't use 127.0.0.1:27017
+npm run dev               # API + mock engine on http://localhost:4000
 ```
 
-### Start Development Server
+Without a reachable `MONGODB_URI`, the backend falls back to local file
+storage (`backend/data/mock-config.json`) — fine for trying things out.
+
+Useful endpoints:
+
+- `GET /api/status` — health, storage backend, environment count
+- `GET /api/environments` — full editor snapshot
+- `GET /api/logs` — recent mock requests
+- `ANY /mock/<environment>/<path>` — the mocked endpoints themselves
+
+### 2. Frontend
 
 ```bash
-npm run dev
+cd frontend
+npm install
+npm start                 # http://localhost:4200
 ```
 
-Open `http://localhost:3000`.
+The dev server proxies `/api` and `/mock` to `http://localhost:4000`
+(see `frontend/proxy.conf.json`), so the editor talks to the backend with no
+CORS setup.
 
-### Build For Production
+### Scripts
+
+| Where    | Script           | What                                        |
+| -------- | ---------------- | ------------------------------------------- |
+| backend  | `npm run dev`    | tsx dev server (`:4000` + one port per env) |
+| backend  | `npm run build`  | esbuild bundle → `dist/server.cjs`          |
+| backend  | `npm start`      | run the built bundle                        |
+| backend  | `npm test`       | vitest: engine units + HTTP/mock e2e        |
+| backend  | `npm run lint`   | `tsc --noEmit`                              |
+| frontend | `npm start`      | Angular dev server with proxy (`:4200`)     |
+| frontend | `npm run build`  | production build → `frontend/dist/sahayak`  |
+| frontend | `npm test`       | vitest unit tests                           |
+
+## Production
+
+Build the frontend, then point the backend at it:
 
 ```bash
-npm run build
-npm start
+cd frontend && npm run build
+cd ../backend
+FRONTEND_DIST=../frontend/dist/sahayak/browser npm start
 ```
 
-## Configuration
-
-The app reads these environment variables:
-
-- `GEMINI_API_KEY`: Used for Gemini-powered features if enabled in the app.
-- `APP_URL`: Host URL injected by the platform.
-- `FIREBASE_SERVICE_ACCOUNT_JSON`: Required for Firestore persistence outside the AI Studio runtime.
-- `FIRESTORE_DATABASE_ID`: Optional. Leave blank to use the default Firestore database.
-
-Example:
-
-```bash
-FIREBASE_SERVICE_ACCOUNT_JSON='{"type":"service_account", "...":"..."}'
-FIRESTORE_DATABASE_ID=""
-```
-
-## Firestore Persistence
-
-The server uses the Firebase Admin SDK and saves data to Firestore when configuration is available.
-
-Important behavior:
-
-- The app starts with local in-memory state.
-- Nothing is written to Firestore until you click `Save Changes`.
-- Saves now use a Firestore hierarchy of environment, route, and response documents so large mock configurations do not rely on one giant document.
-- If you delete every mock environment and then save, Firestore is updated to match that empty state.
-- If Firestore is unavailable, the app still runs, but persistence is disabled.
-
-## How To Use
-
-1. Create an environment.
-2. Add a route and choose an HTTP method.
-3. Set the endpoint path relative to the environment prefix.
-4. Add one or more responses.
-5. Configure headers, body, status, latency, and optional matching rules.
-6. Click `Save Changes`.
-7. Test the endpoint through `/mock/:envId/...`.
-
-## Troubleshooting
-
-### Save fails with Firestore errors
-
-- Confirm the Firebase service account belongs to the same project as the Firestore database.
-- If you use the default database, leave `FIRESTORE_DATABASE_ID` empty.
-- Check that Firestore is enabled for the project.
-
-### Mock route not found
-
-- Confirm the environment ID or slug in the URL.
-- Make sure the route path matches after the environment prefix is stripped.
-- Check the HTTP method on the route.
-
-### Changes reappear after refresh
-
-- You probably edited the local state but did not click `Save Changes`.
-- Refreshing reloads the last saved Firestore state.
-
-## Deployment
-
-This app needs a Node.js runtime because it uses an Express server.
-
-Recommended deployment flow:
-
-1. Build the app with `npm run build`
-2. Start the server with `npm start`
-3. Set your Firebase service account JSON in the host environment
-
-
-## Notes On Saving
-
-The save button in the UI writes the current environment list to Firestore only when you explicitly choose to save. That helps prevent accidental overwrites while editing.
-
-If you are working with a long list of routes or environments, the new Firestore layout is much safer than storing everything in one document.
+The backend then serves the built UI from `/` alongside `/api` and `/mock`.
+(DESIGN.md §10 Phase 5 specifies Docker + HTTPS for the deployed setup.)
