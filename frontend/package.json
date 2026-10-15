@@ -5,6 +5,7 @@
     "ng": "ng",
     "start": "node ./scripts/start.cjs",
     "build": "node ./scripts/build.cjs",
+    "postbuild": "node -e \"const fs=require('fs'); if(fs.existsSync('dist/sahayak/browser')){fs.cpSync('dist/sahayak/browser', 'dist/sahayak', {recursive:true});}\"",
     "watch": "ng build --watch --configuration development",
     "test": "ng test"
   },
