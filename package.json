@@ -1,0 +1,15 @@
+{
+  "name": "sahayak-mock-api",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Sahayak - Local-first Mock API Platform",
+  "scripts": {
+    "build": "npm --prefix frontend install && npm --prefix frontend run build && node -e \"const fs=require('fs'); fs.cpSync('frontend/dist/sahayak/browser', 'dist', {recursive:true});\"",
+    "build:frontend": "npm --prefix frontend install && npm --prefix frontend run build",
+    "build:backend": "npm --prefix backend install && npm --prefix backend run build",
+    "build:all": "npm run build:backend && npm run build:frontend",
+    "start": "npm --prefix backend start",
+    "start:frontend": "npm --prefix frontend start",
+    "start:backend": "npm --prefix backend start"
+  }
+}
